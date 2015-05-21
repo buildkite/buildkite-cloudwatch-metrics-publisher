@@ -4,10 +4,6 @@ Publish your [Buildkite](https://buildkite.com/) job queue statistics to [AWS Cl
 
 ![Screenshot of AWS metrics](http://i.imgur.com/3p26RWS.png)
 
-Available tags:
-
-* `latest` ([source](https://github.com/buildkite/buildkite-cloudwatch-metrics-publisher/blob/master/Dockerfile)) - Alpine Linux based
-
 ## Published CloudWatch Metrics
 
 The following AWS CloudWatch metrics will be published:
@@ -21,9 +17,9 @@ Each metric is also reported with an additional Project dimension, so you can mo
 
 ## Prerequisites
 
-1. A [Buildkite API Access Token](https://buildkite.com/user/api-access-tokens) with `read_projects` permission.
+1. [Buildkite API Access Token](https://buildkite.com/user/api-access-tokens) with `read_projects` permission.
 
-2. A [AWS IAM Policy](https://console.aws.amazon.com/iam/home) (e.g. `buildkite-cloudwatch-metrics-publisher`) with the following policy document:
+2. [AWS IAM Policy](https://console.aws.amazon.com/iam/home) (e.g. `buildkite-cloudwatch-metrics-publisher`) with the following policy document:
 
 ```
 {
@@ -43,7 +39,7 @@ Each metric is also reported with an additional Project dimension, so you can mo
 }
 ```
 
-2. A [AWS IAM User](https://console.aws.amazon.com/iam/home) (e.g. `buildkite-cloudwatch-metrics-publisher`) with the above policy attached.
+2. [AWS IAM User](https://console.aws.amazon.com/iam/home) (e.g. `buildkite-cloudwatch-metrics-publisher`) with the above policy attached.
 
 ## Setup
 
