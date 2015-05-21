@@ -1,0 +1,64 @@
+#!/bin/bash
+
+set -eu
+
+while true; do
+  echo "Fetching Buildkite project stats..."
+
+  projects=$(
+    curl \
+      -s \
+      -H "Authorization: Bearer $BUILDKITE_API_ACCESS_TOKEN" \
+      "https://api.buildkite.com/v1/organizations/$BUILDKITE_ORG_SLUG/projects"
+  )
+
+  # Report global sums
+
+  global_metrics=$(
+    printf "ScheduledJobs ";   echo "$projects" | jq -r 'map(.scheduled_jobs_count) | add'
+    printf "RunningJobs ";     echo "$projects" | jq -r 'map(.running_jobs_count) | add'
+    printf "ScheduledBuilds "; echo "$projects" | jq -r 'map(.scheduled_builds_count) | add'
+    printf "RunningBuilds ";   echo "$projects" | jq -r 'map(.running_builds_count) | add'
+  )
+
+  while read -r line; do
+    metric=$(echo $line | awk '{ print $1 }')
+    value=$(echo $line | awk '{ print $2 }')
+
+    echo "Putting global metric Buildkite.$metric=$value"
+    aws cloudwatch put-metric-data \
+                   --metric-name "$metric" \
+                   --namespace Buildkite \
+                   --value "$value" \
+                   --unit Count
+  done <<< "$global_metrics"
+
+  # Report project sums
+
+  project_metrics=$(
+    echo "$projects" | jq -r '
+      map("\(.slug) ScheduledJobs \(.scheduled_jobs_count)"),
+      map("\(.slug) RunningJobs \(.running_jobs_count)"),
+      map("\(.slug) ScheduledBuilds \(.scheduled_builds_count)"),
+      map("\(.slug) RunningBuilds \(.running_builds_count)")
+      | .[]
+    '
+  )
+
+  while read -r line; do
+    project=$(echo $line | awk '{ print $1 }')
+    metric=$(echo $line | awk '{ print $2 }')
+    value=$(echo $line | awk '{ print $3 }')
+
+    echo "Putting project metric Buildkite.$metric=$value ($project)"
+    aws cloudwatch put-metric-data \
+                   --metric-name "$metric" \
+                   --namespace Buildkite \
+                   --value "$value" \
+                   --dimensions "Project=$project" \
+                   --unit Count
+  done <<< "$project_metrics"
+
+  echo "Sleeping for 5 seconds..."
+  sleep 5
+done
