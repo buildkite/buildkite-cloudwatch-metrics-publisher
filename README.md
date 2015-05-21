@@ -55,7 +55,7 @@ AWS_DEFAULT_REGION=us-east-1
 
 ## Running
 
-The simplest way is using Docker:
+The simplest way is using the [official Docker image](https://registry.hub.docker.com/u/buildkite/cloudwatch-metrics-provider/):
 
 ```
 docker run -d \
