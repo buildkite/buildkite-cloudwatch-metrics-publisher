@@ -1,6 +1,6 @@
 # Buildkite Cloudwatch Metrics Publisher
 
-Publish your [Buildkite](https://buildkite.com/) job queue statistics to [AWS Cloud Watch](http://aws.amazon.com/cloudwatch/) for easy auto-scaling of your [Buildkite Agents](https://github.com/buildkite/agent).
+Publish your [Buildkite](https://buildkite.com/) job queue statistics to [AWS Cloud Watch](http://aws.amazon.com/cloudwatch/) for easy EC2 auto-scaling of your build agents.
 
 ![Screenshot of AWS metrics](http://i.imgur.com/jqVdlA2.png)
 
