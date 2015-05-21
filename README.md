@@ -2,7 +2,7 @@
 
 Publish your [Buildkite](https://buildkite.com/) job queue statistics to [AWS Cloud Watch](http://aws.amazon.com/cloudwatch/) for easy EC2 auto-scaling of your build agents.
 
-![Screenshot of AWS metrics](http://i.imgur.com/jqVdlA2.png)
+![Screenshot of AWS metrics](http://i.imgur.com/3p26RWS.png)
 
 Available tags:
 
