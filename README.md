@@ -13,7 +13,7 @@ The following AWS CloudWatch metrics will be published:
 * Buildkite > ScheduledBuilds
 * Buildkite > ScheduledJobs
 
-Each metric is also reported with an additional Project dimension, so you can monitor your build queues on both a global and per-project basis.
+Each metric is also reported with a Project dimension, so you can monitor your build queues on both a global and per-project basis.
 
 ## Prerequisites
 
