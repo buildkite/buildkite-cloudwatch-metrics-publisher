@@ -9,7 +9,7 @@ while true; do
     curl \
       -s \
       -H "Authorization: Bearer $BUILDKITE_API_ACCESS_TOKEN" \
-      "https://api.buildkite.com/v1/organizations/$BUILDKITE_ORG_SLUG/projects"
+      "https://api.buildkite.com/v1/organizations/$BUILDKITE_ORG_SLUG/projects?per_page=100"
   )
 
   # Report global sums
