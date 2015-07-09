@@ -61,7 +61,7 @@ The simplest way is using the [official Docker image](https://registry.hub.docke
 docker run -d \
   --name buildkite-cloudwatch-metrics-publisher \
   --env-file=buildkite-cloudwatch-metrics-publisher.env \
-  buildkite/cloudwatch-metrics-publisher
+  buildkite/cloudwatch-metrics-provider
 ```
 
 To tail the logs:
