@@ -1,7 +1,10 @@
-FROM gliderlabs/alpine:3.1
+FROM gliderlabs/alpine:latest
 
-RUN apk --update add bash jq curl python py-pip \
-    && pip install awscli \
+ADD requirements.txt /tmp/requirements.txt
+
+RUN apk --update add bash ca-certificates python py-pip \
+    && pip install -r /tmp/requirements.txt \
+    && rm -rf /tmp/requirements.txt \
     && apk del py-pip \
     && apk del py-setuptools \
     && rm -rf /var/cache/apk/* \

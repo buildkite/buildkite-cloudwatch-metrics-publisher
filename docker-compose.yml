@@ -1,0 +1,5 @@
+metrics:
+  build: "."
+  volumes:
+    - "./buildkite-cloudwatch-metrics-publisher:/usr/bin/buildkite-cloudwatch-metrics-publisher"
+  env_file: "./buildkite-cloudwatch-metrics-publisher.env"

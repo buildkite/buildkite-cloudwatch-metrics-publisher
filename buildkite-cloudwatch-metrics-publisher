@@ -1,64 +1,209 @@
-#!/bin/bash
+#!/usr/bin/env python
+# encoding: utf-8
 
-set -eu
+from collections import Counter, namedtuple
+from string import capwords
+import boto3
+import json
+import logging
+import operator
+import os
+import time
+import urllib2
 
-while true; do
-  echo "Fetching Buildkite project stats..."
+client = boto3.client('cloudwatch')
 
-  projects=$(
-    curl \
-      -s \
-      -H "Authorization: Bearer $BUILDKITE_API_ACCESS_TOKEN" \
-      "https://api.buildkite.com/v1/organizations/$BUILDKITE_ORG_SLUG/projects?per_page=100"
-  )
+def api_token():
+    return os.environ.get('BUILDKITE_API_ACCESS_TOKEN')
 
-  # Report global sums
+def organization_slug():
+    return os.environ.get('BUILDKITE_ORG_SLUG')
 
-  global_metrics=$(
-    printf "ScheduledJobs ";   echo "$projects" | jq -r 'map(.scheduled_jobs_count) | add'
-    printf "RunningJobs ";     echo "$projects" | jq -r 'map(.running_jobs_count) | add'
-    printf "ScheduledBuilds "; echo "$projects" | jq -r 'map(.scheduled_builds_count) | add'
-    printf "RunningBuilds ";   echo "$projects" | jq -r 'map(.running_builds_count) | add'
-  )
+def titlecase(str):
+    """
+    Convert a Buildkite project slug with underscores into a titlecased label for
+    use as an AWS CloudWatch metric name.
 
-  while read -r line; do
-    metric=$(echo $line | awk '{ print $1 }')
-    value=$(echo $line | awk '{ print $2 }')
+    >>> titlecase('some_slug')
+    'SomeSlug'
+    """
+    return capwords(str, '_').replace('_', '')
 
-    echo "Putting global metric Buildkite.$metric=$value"
-    aws cloudwatch put-metric-data \
-                   --metric-name "$metric" \
-                   --namespace Buildkite \
-                   --value "$value" \
-                   --unit Count
-  done <<< "$global_metrics"
+def to_metric_datum(metric):
+    """
+    Convert a Metric named Tuple into a dict that can be serialised into a CloudWatch
+    metric datum.
 
-  # Report project sums
+    See: https://boto3.readthedocs.org/en/latest/reference/services/cloudwatch.html#CloudWatch.Client.put_metric_data
 
-  project_metrics=$(
-    echo "$projects" | jq -r '
-      map("\(.slug) ScheduledJobs \(.scheduled_jobs_count)"),
-      map("\(.slug) RunningJobs \(.running_jobs_count)"),
-      map("\(.slug) ScheduledBuilds \(.scheduled_builds_count)"),
-      map("\(.slug) RunningBuilds \(.running_builds_count)")
-      | .[]
-    '
-  )
+    >>> from pprint import pprint as pp
+    >>> Metric = namedtuple('Metric', 'id dimensions name key value')
+    >>> metric = Metric(id='project_three', dimensions={'Project': 'project_three'}, name='RunningBuildsCount', key='running_builds_count', value=5)
+    >>> pp(to_metric_datum(metric))
+    {'Dimensions': [{'Name': 'Project', 'Value': 'project_three'}],
+     'MetricName': 'RunningBuildsCount',
+     'Unit': 'Count',
+     'Value': 5}
+    """
+    return {
+        'MetricName': metric.name,
+        'Value': metric.value,
+        'Unit': 'Count',
+        'Dimensions': [{'Name': k, 'Value': v} for k,v in metric.dimensions.iteritems()]
+    }
 
-  while read -r line; do
-    project=$(echo $line | awk '{ print $1 }')
-    metric=$(echo $line | awk '{ print $2 }')
-    value=$(echo $line | awk '{ print $3 }')
+def chunks(list, n=20):
+    """
+    Yield successive n-sized chunks from a list.
 
-    echo "Putting project metric Buildkite.$metric=$value ($project)"
-    aws cloudwatch put-metric-data \
-                   --metric-name "$metric" \
-                   --namespace Buildkite \
-                   --value "$value" \
-                   --dimensions "Project=$project" \
-                   --unit Count
-  done <<< "$project_metrics"
+    >>> from pprint import pprint as pp
+    >>> long_list = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
+    >>> pp(list(chunks(long_list, n=5)))
+    [[1, 2, 3, 4, 5], [6, 7, 8, 9, 10], [11, 12, 13, 14, 15], [16, 17, 18, 19, 20]]
 
-  echo "Sleeping for 5 seconds..."
-  sleep 5
-done
+    >>> pp(list(chunks(long_list, n=10)))
+    [[1, 2, 3, 4, 5, 6, 7, 8, 9, 10], [11, 12, 13, 14, 15, 16, 17, 18, 19, 20]]
+    """
+    for i in xrange(0, len(list), n):
+        yield list[i:i+n]
+
+def send_metrics(metrics):
+    """
+    Send the metrics off to CloudWatch.
+
+    We need to batch these requests into groups of 20 MetricData items each.
+    """
+    metric_partitions = list(chunks(map(to_metric_datum, metrics)))
+    logging.info('Sending %s metrics to CloudWatch...', len(metrics))
+    logging.info('Splitting update over %s put_metric_data operations', len(metric_partitions))
+
+    for index, metrics in enumerate(metric_partitions):
+        response = client.put_metric_data(Namespace='Buildkite', MetricData=metrics)
+        status_code = response.get('ResponseMetadata').get('HTTPStatusCode')
+        request_id = response.get('ResponseMetadata').get('RequestId')
+        if status_code == 200:
+            logging.info("CloudWatch put_metric_data request '%s' (%s/%s): 200 OK", request_id, index+1, len(metric_partitions))
+        else:
+            logging.error("CloudWatch put_metric_data request '%s' (%s/%s): %s", request_id, index+1, len(metric_partitions), status_code)
+
+def process_response(projects):
+    """
+    Filter and format raw repsonse JSON from the Buildkite project endpoint.
+
+    Extracts the running and scheduled build and job counts from each project,
+    producing a sanitised dictionary of summed values for each significant field.
+
+    Extraneous keys are dropped, and missing counts are ignored.
+
+    - for each project
+      - extract fields we care about.
+      - sanitise fields we care about.
+      - populate projects.
+    - summarise projects
+
+    >>> from pprint import pprint as pp
+    >>> projects = [
+    ...   {'slug': 'project-one', 'running_jobs_count': 2, 'scheduled_builds_count': 3, 'running_builds_count': 0, 'herp': 'derp'},
+    ...   {'slug': 'project-two', 'running_jobs_count': 2, 'running_builds_count': 0, 'foo': 'bar'},
+    ...   {'slug': 'project-three', 'running_jobs_count': 2, 'scheduled_builds_count': 3, 'running_builds_count': 0, 'herp': 'derp'}
+    ... ]
+    >>> pp(process_response(projects))
+    [Metric(id='project_one', dimensions={'Project': 'project_one'}, name='ScheduledBuildsCount', key='scheduled_builds_count', value=3),
+     Metric(id='project_one', dimensions={'Project': 'project_one'}, name='RunningJobsCount', key='running_jobs_count', value=2),
+     Metric(id='project_one', dimensions={'Project': 'project_one'}, name='RunningBuildsCount', key='running_builds_count', value=0),
+     Metric(id='project_one', dimensions={'Project': 'project_one'}, name='ScheduledJobsCount', key='scheduled_jobs_count', value=0),
+     Metric(id='project_two', dimensions={'Project': 'project_two'}, name='ScheduledBuildsCount', key='scheduled_builds_count', value=0),
+     Metric(id='project_two', dimensions={'Project': 'project_two'}, name='RunningJobsCount', key='running_jobs_count', value=2),
+     Metric(id='project_two', dimensions={'Project': 'project_two'}, name='RunningBuildsCount', key='running_builds_count', value=0),
+     Metric(id='project_two', dimensions={'Project': 'project_two'}, name='ScheduledJobsCount', key='scheduled_jobs_count', value=0),
+     Metric(id='project_three', dimensions={'Project': 'project_three'}, name='ScheduledBuildsCount', key='scheduled_builds_count', value=3),
+     Metric(id='project_three', dimensions={'Project': 'project_three'}, name='RunningJobsCount', key='running_jobs_count', value=2),
+     Metric(id='project_three', dimensions={'Project': 'project_three'}, name='RunningBuildsCount', key='running_builds_count', value=0),
+     Metric(id='project_three', dimensions={'Project': 'project_three'}, name='ScheduledJobsCount', key='scheduled_jobs_count', value=0),
+     Metric(id='global', dimensions={}, name='ScheduledBuildsCount', key='scheduled_builds_count', value=6),
+     Metric(id='global', dimensions={}, name='RunningJobsCount', key='running_jobs_count', value=6),
+     Metric(id='global', dimensions={}, name='RunningBuildsCount', key='running_builds_count', value=0),
+     Metric(id='global', dimensions={}, name='ScheduledJobsCount', key='scheduled_jobs_count', value=0)]
+    """
+    logging.info('Processing project stats')
+    count_keys = ['scheduled_jobs_count', 'running_jobs_count', 'scheduled_builds_count', 'running_builds_count']
+    default_counts = dict.fromkeys(count_keys, 0)
+    select_counts = lambda x: {k: v for k,v in x.iteritems() if k in count_keys}
+    merge_default_counts = lambda x: dict(default_counts, **dict(x))
+    Metric = namedtuple('Metric', 'id dimensions name key value')
+
+    def as_metric(id, key, value, dimensions={}):
+        return Metric(id=id, dimensions=dimensions, name=titlecase(key), key=key, value=value)
+
+    def project_metrics(project):
+        slug = project.get('slug').replace('-', '_')
+        counts = merge_default_counts(select_counts(project))
+        return [as_metric(id=slug, dimensions={'Project':slug}, key=k, value=v) for k,v in counts.iteritems()]
+
+    def global_metrics(project_metrics):
+        counts = merge_default_counts(reduce(operator.add, map(Counter, map(lambda x: {x.key: x.value}, project_metrics))))
+        return [as_metric(id='global', key=k, value=v) for k,v in counts.iteritems()]
+
+    metrics = reduce(list.__add__, map(project_metrics, projects))
+    metrics.extend(global_metrics(metrics))
+    return metrics
+
+def fetch_projects():
+    """
+    Fetch projects from Buildkite.
+    """
+    logging.info('Fetching Buildkite project stats...')
+    url = 'https://api.buildkite.com/v1/organizations/{organization}/projects?per_page=100'.format(organization=organization_slug())
+    headers = {'Authorization': 'Bearer {token}'.format(token=api_token())}
+    response = urllib2.urlopen(urllib2.Request(url, headers=headers))
+    return response.read()
+
+def parse_response(projects_response):
+    """
+    Parse Buildkite projects response into JSON.
+
+    Takes a string representing a complex data structure, returns a parsed
+    complex data structure.
+
+    Invalid JSON strings will just explode in the usual manner.
+
+    >>> parse_response('{"foo": ["Bar"]}')
+    {u'foo': [u'Bar']}
+
+    >>> parse_response("lolnope!")
+    Traceback (most recent call last):
+      ...
+    ValueError: No JSON object could be decoded
+    """
+    return json.loads(projects_response)
+
+def main():
+    """
+    >>> main()
+    Traceback (most recent call last):
+      ...
+    RuntimeError: BUILDKITE_API_ACCESS_TOKEN not set!
+
+    >>> os.environ['BUILDKITE_API_ACCESS_TOKEN'] = '1234'
+    >>> main()
+    Traceback (most recent call last):
+      ...
+    RuntimeError: BUILDKITE_ORG_SLUG not set!
+    """
+    if not api_token():
+        raise RuntimeError('BUILDKITE_API_ACCESS_TOKEN not set!')
+    if not organization_slug():
+        raise RuntimeError('BUILDKITE_ORG_SLUG not set!')
+
+    while True:
+        send_metrics(process_response(parse_response(fetch_projects())))
+        logging.info('Sleeping for 5 seconds...Zzzzzz')
+        time.sleep(5)
+
+if __name__ == '__main__':
+    if os.environ.get('DOCTEST'):
+        import doctest
+        doctest.testmod()
+    else:
+        logging.basicConfig(format='%(asctime)s - %(levelname)s - %(message)s', level=logging.INFO)
+        main()
