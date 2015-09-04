@@ -178,18 +178,6 @@ def parse_response(projects_response):
     return json.loads(projects_response)
 
 def main():
-    """
-    >>> main()
-    Traceback (most recent call last):
-      ...
-    RuntimeError: BUILDKITE_API_ACCESS_TOKEN not set!
-
-    >>> os.environ['BUILDKITE_API_ACCESS_TOKEN'] = '1234'
-    >>> main()
-    Traceback (most recent call last):
-      ...
-    RuntimeError: BUILDKITE_ORG_SLUG not set!
-    """
     if not api_token():
         raise RuntimeError('BUILDKITE_API_ACCESS_TOKEN not set!')
     if not organization_slug():
