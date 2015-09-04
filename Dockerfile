@@ -2,7 +2,7 @@ FROM gliderlabs/alpine:latest
 
 ADD requirements.txt /tmp/requirements.txt
 
-RUN apk --update add bash ca-certificates python py-pip \
+RUN apk --update add ca-certificates python py-pip \
     && pip install -r /tmp/requirements.txt \
     && rm -rf /tmp/requirements.txt \
     && apk del py-pip \
