@@ -72,9 +72,10 @@ docker logs -f buildkite-cloudwatch-metrics-publisher
 
 ### Without Docker
 
-You'll need [jq](http://stedolan.github.io/jq/) and [aws-cli](http://aws.amazon.com/cli/) installed.
+You'll need python ~2.7 installed, and also the pip package manager.
 
 ```
+pip install -r requirements.txt
 source buildkite-cloudwatch-metrics-publisher.env && \
 ./buildkite-cloudwatch-metrics-publisher
 ```
