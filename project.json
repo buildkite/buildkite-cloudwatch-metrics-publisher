@@ -1,0 +1,5 @@
+{
+  "name": "buildkite-cloudwatch-metrics-publisher",
+  "description": "A publisher for buildkite metrics",
+  "nameTemplate": "buildkite-{{.Function.Name}}"
+}
