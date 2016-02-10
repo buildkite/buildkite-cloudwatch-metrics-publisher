@@ -8,11 +8,11 @@ import (
 	"os"
 	"time"
 
-	"./buildkite"
 	"github.com/apex/go-apex"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/cloudwatch"
+	"github.com/buildkite/buildkite-cloudwatch-metrics-publisher/functions/collect-metrics/buildkite"
 )
 
 var (
