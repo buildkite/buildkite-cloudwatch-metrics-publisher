@@ -1,17 +1,50 @@
 # Buildkite Cloudwatch Metrics Publisher
 
+[![Launch BK Cloudwatch Metrics Publisher](http://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/images/cloudformation-launch-stack-button.png)](https://console.aws.amazon.com/cloudformation/home?region=us-east-1#/stacks/new?stackName=buildkite-cloudwatch-metrics-publisher&templateURL=https://s3.amazonaws.com/buildkite-cloudwatch-metrics-publisher/cloudwatch-metrics-publisher.json)
+
 Publish [Buildkite](https://buildkite.com/) job queue statistics to [AWS Cloudwatch](http://aws.amazon.com/cloudwatch/) for easy EC2 auto-scaling of your build agents.
 
 ## Installing
 
-<TODO>
+The easiest way to install is to press the above button and then enter your org slug and your [Buildkite API Access Token](https://buildkite.com/user/api-access-tokens) with `read_projects` permissions created.
+
+Alternately, run via the command-line:
+
+```bash
+aws cloudformation create-stack \
+	--output text \
+	--stack-name buildkite-cloudwatch-metrics-publisher \
+	--disable-rollback \
+	--template-body "https://s3.amazonaws.com/buildkite-cloudwatch-metrics-publisher/cloudwatch-metrics-publisher.json" \
+	--capabilities CAPABILITY_IAM \
+	--parameters ParameterKey=BuildkiteApiAccessToken,ParameterValue=BUILDKITE_API_TOKEN_GOES_HERE \
+	ParameterKey=BuildkiteOrgSlug,ParameterValue=BUILDKITE_ORG_SLUG_GOES_HERE
+```
+
+After the stack is run you will have the following metrics populated in CloudWatch (updated every 5 minutes):
+
+```
+Buildkite > RunningBuildsCount
+Buildkite > RunningJobsCount
+Buildkite > ScheduledBuildsCount
+Buildkite > ScheduledJobsCount
+Buildkite > (Queue) > RunningBuildsCount
+Buildkite > (Queue) > RunningJobsCount
+Buildkite > (Queue) > ScheduledBuildsCount
+Buildkite > (Queue) > ScheduledJobsCount
+Buildkite > (Pipeline) > RunningBuildsCount
+Buildkite > (Pipeline) > RunningJobsCount
+Buildkite > (Pipeline) > ScheduledBuildsCount
+Buildkite > (Pipeline) > ScheduledJobsCount
+```
 
 ## Developing
 
-Development is done with [Apex](https://github.com/apex/apex) and AWS Lambda. Once you have a [Buildkite API Access Token](https://buildkite.com/user/api-access-tokens) with `read_projects` permissions created, deploy the lambda function:
+Development is done with [Apex](https://github.com/apex/apex). Once installed and you have the correct credentials in place you can run:
 
 ```bash
-apex -e BUILDKITE_ORG_SLUG=<org here> -e BUILDKITE_API_ACCESS_TOKEN=<token here> deploy
+make upload
+make create-stack
 ```
 
 ## License
