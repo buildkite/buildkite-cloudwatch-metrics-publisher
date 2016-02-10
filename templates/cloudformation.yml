@@ -1,0 +1,95 @@
+
+Parameters:
+  BuildkiteApiAccessToken:
+    Description: Your Buildkite personal api access token
+    Type: String
+    NoEcho: true
+
+  BuildkiteOrgSlug:
+    Description: Your Buildkite organization slug
+    Type: String
+
+Resources:
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: [ lambda.amazonaws.com ]
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Path: "/"
+      Policies:
+        - PolicyName: root
+          PolicyDocument:
+            Statement:
+              - Effect: Allow
+                Action:
+                  - cloudformation:DescribeStacks
+                  - events:PutRule
+                  - events:PutTargets
+                  - lambda:*
+                  - cloudwatch:PutMetricData
+                Resource: "*"
+
+  CollectMetrics:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: index.handle
+      Role: $(LambdaExecutionRole[Arn])
+      Code:
+        S3Bucket: buildkite-cloudwatch-metrics-publisher
+        S3Key: collect-metrics.zip
+      Runtime: nodejs
+      Timeout: 25
+
+  InvokeCollectMetrics:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: index.handle
+      Role: $(LambdaExecutionRole[Arn])
+      Code:
+        ZipFile: |
+          var aws = require('aws-sdk');
+          var lambda = new aws.Lambda();
+          exports.handle = function(event, context) {
+            lambda.invoke({
+              FunctionName: '$(CollectMetrics)',
+              Payload: JSON.stringify({
+                BuildkiteApiAccessToken: '$(BuildkiteApiAccessToken)',
+                BuildkiteOrgSlug: '$(BuildkiteOrgSlug)'
+              }, null, 2)
+            }, function(error, data) {
+              if (error) {
+                context.done('error', error);
+              }
+              if(data.Payload){
+               context.succeed(data.Payload)
+              }
+            });
+          }
+      Runtime: nodejs
+      Timeout: 25
+
+
+  LambdaTimerService:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: index.handle
+      Role: $(LambdaExecutionRole[Arn])
+      Code:
+        S3Bucket: buildkite-cloudwatch-metrics-publisher
+        S3Key: lambda-timer.zip
+      Runtime: nodejs
+      Timeout: 25
+
+  LambdaTimer:
+    Type: Custom::LambdaTimer
+    Properties:
+      ServiceToken: $(LambdaTimerService[Arn])
+      Name: $(AWS::StackName)-LambdaTimer
+      ScheduleExpression: rate(5 minutes)
+      LambdaArn: $(InvokeCollectMetrics[Arn])
