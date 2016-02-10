@@ -2,10 +2,10 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
-	"os"
 	"time"
 
 	"github.com/apex/go-apex"
@@ -13,11 +13,6 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/cloudwatch"
 	"github.com/buildkite/buildkite-cloudwatch-metrics-publisher/functions/collect-metrics/buildkite"
-)
-
-var (
-	orgSlug string
-	apiKey  string
 )
 
 // Generates:
@@ -35,14 +30,24 @@ var (
 // Buildkite > (Pipeline) > ScheduledJobsCount
 
 func main() {
-	orgSlug = os.Getenv("BUILDKITE_ORG_SLUG")
-	apiKey = os.Getenv("BUILDKITE_API_ACCESS_TOKEN")
-
 	apex.HandleFunc(func(event json.RawMessage, ctx *apex.Context) (interface{}, error) {
 		svc := cloudwatch.New(session.New())
 
-		log.Printf("Querying buildkite for builds for org %s for past 5 mins", orgSlug)
-		builds, err := recentBuildkiteBuilds()
+		var conf Config
+		if err := json.Unmarshal(event, &conf); err != nil {
+			return nil, err
+		}
+
+		if conf.BuildkiteApiAccessToken == "" {
+			return nil, errors.New("No BuildkiteApiAccessToken provided")
+		}
+
+		if conf.BuildkiteOrgSlug == "" {
+			return nil, errors.New("No BuildkiteOrgSlug provided")
+		}
+
+		log.Printf("Querying buildkite for builds for org %s for past 5 mins", conf.BuildkiteOrgSlug)
+		builds, err := recentBuildkiteBuilds(conf.BuildkiteOrgSlug, conf.BuildkiteApiAccessToken)
 		if err != nil {
 			return nil, err
 		}
@@ -82,6 +87,10 @@ func main() {
 
 		return res, nil
 	})
+}
+
+type Config struct {
+	BuildkiteOrgSlug, BuildkiteApiAccessToken string
 }
 
 type Counts struct {
@@ -163,7 +172,7 @@ func (r Result) extractMetricData() []*cloudwatch.MetricDatum {
 	return data
 }
 
-func recentBuildkiteBuilds() ([]buildkite.Build, error) {
+func recentBuildkiteBuilds(orgSlug, apiKey string) ([]buildkite.Build, error) {
 	url := fmt.Sprintf(
 		"https://api.buildkite.com/v2/organizations/%s/builds?created_from=%s&page=%d",
 		orgSlug,
