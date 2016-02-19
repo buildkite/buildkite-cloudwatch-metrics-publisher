@@ -1,93 +1,50 @@
 # Buildkite Cloudwatch Metrics Publisher
 
-Publish your [Buildkite](https://buildkite.com/) job queue statistics to [AWS Cloud Watch](http://aws.amazon.com/cloudwatch/) for easy EC2 auto-scaling of your build agents.
+[![Launch BK Cloudwatch Metrics Publisher](http://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/images/cloudformation-launch-stack-button.png)](https://console.aws.amazon.com/cloudformation/home?region=us-east-1#/stacks/new?stackName=buildkite-cloudwatch-metrics-publisher&templateURL=https://s3.amazonaws.com/buildkite-cloudwatch-metrics-publisher/cloudwatch-metrics-publisher.json)
 
-![Screenshot of AWS metrics](http://i.imgur.com/3p26RWS.png)
+Publish [Buildkite](https://buildkite.com/) job queue statistics to [AWS Cloudwatch](http://aws.amazon.com/cloudwatch/) for easy EC2 auto-scaling of your build agents.
 
-## Published CloudWatch Metrics
+## Installing
 
-The following AWS CloudWatch metrics will be published:
+The easiest way to install is to press the above button and then enter your org slug and your [Buildkite API Access Token](https://buildkite.com/user/api-access-tokens) with `read_projects` permissions created.
 
-* Buildkite > RunningBuilds
-* Buildkite > RunningJobs
-* Buildkite > ScheduledBuilds
-* Buildkite > ScheduledJobs
+Alternately, run via the command-line:
 
-Each metric is also reported with a Project dimension, so you can monitor your build queues on both a global and per-project basis.
-
-## Prerequisites
-
-1. [Buildkite API Access Token](https://buildkite.com/user/api-access-tokens) with `read_projects` permission.
-
-2. [AWS IAM Policy](https://console.aws.amazon.com/iam/home) (e.g. `buildkite-cloudwatch-metrics-publisher`) with the following policy document:
-
-```
-{
-    "Version": "2012-10-17",
-    "Statement": [
-        {
-            "Sid": "Stmt1432216114000",
-            "Effect": "Allow",
-            "Action": [
-                "cloudwatch:PutMetricData"
-            ],
-            "Resource": [
-                "*"
-            ]
-        }
-    ]
-}
+```bash
+aws cloudformation create-stack \
+	--output text \
+	--stack-name buildkite-cloudwatch-metrics-publisher \
+	--disable-rollback \
+	--template-body "https://s3.amazonaws.com/buildkite-cloudwatch-metrics-publisher/cloudwatch-metrics-publisher.json" \
+	--capabilities CAPABILITY_IAM \
+	--parameters ParameterKey=BuildkiteApiAccessToken,ParameterValue=BUILDKITE_API_TOKEN_GOES_HERE \
+	ParameterKey=BuildkiteOrgSlug,ParameterValue=BUILDKITE_ORG_SLUG_GOES_HERE
 ```
 
-2. [AWS IAM User](https://console.aws.amazon.com/iam/home) (e.g. `buildkite-cloudwatch-metrics-publisher`) with the above policy attached.
-
-## Setup
-
-Create a `buildkite-cloudwatch-metrics-publisher.env` file like below, copying in the credentials of the AWS user, the Buildkite API access token, your AWS region and your Buildkite organization's slug:
+After the stack is run you will have the following metrics populated in CloudWatch (updated every 5 minutes):
 
 ```
-BUILDKITE_ORG_SLUG=my-org
-BUILDKITE_API_ACCESS_TOKEN=xxx
-AWS_ACCESS_KEY_ID=yyy
-AWS_SECRET_ACCESS_KEY=zzz
-AWS_DEFAULT_REGION=us-east-1
+Buildkite > RunningBuildsCount
+Buildkite > RunningJobsCount
+Buildkite > ScheduledBuildsCount
+Buildkite > ScheduledJobsCount
+Buildkite > (Queue) > RunningBuildsCount
+Buildkite > (Queue) > RunningJobsCount
+Buildkite > (Queue) > ScheduledBuildsCount
+Buildkite > (Queue) > ScheduledJobsCount
+Buildkite > (Pipeline) > RunningBuildsCount
+Buildkite > (Pipeline) > RunningJobsCount
+Buildkite > (Pipeline) > ScheduledBuildsCount
+Buildkite > (Pipeline) > ScheduledJobsCount
 ```
 
-## Running
+## Developing
 
-The simplest way is using the [official Docker image](https://registry.hub.docker.com/u/buildkite/cloudwatch-metrics-provider/):
+Development is done with [Apex](https://github.com/apex/apex). Once installed and you have the correct credentials in place you can run:
 
-```
-docker run -d \
-  --name buildkite-cloudwatch-metrics-publisher \
-  --env-file=buildkite-cloudwatch-metrics-publisher.env \
-  buildkite/cloudwatch-metrics-provider
-```
-
-To tail the logs:
-
-```
-docker logs -f buildkite-cloudwatch-metrics-publisher
-```
-
-### Without Docker
-
-You'll need python ~2.7 installed, and also the pip package manager.
-
-```
-pip install -r requirements.txt
-source buildkite-cloudwatch-metrics-publisher.env && \
-./buildkite-cloudwatch-metrics-publisher
-```
-
-## Development
-
-```
-docker build -t bk-cw-metrics-publisher .
-docker run -it \
-  --rm=true \
-  --env-file=buildkite-cloudwatch-metrics-publisher.env \
-  bk-cw-metrics-publisher
+```bash
+make upload
+make create-stack
 ```
 
 ## License

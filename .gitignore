@@ -1,1 +1,2 @@
-buildkite-cloudwatch-metrics-publisher.env
+vendor/
+build/

@@ -1,0 +1,40 @@
+hash: 63df2146086c8a5d411f0d6ddf0a33cc59644425a06556fe0337e84a132ec84a
+updated: 2016-02-10T12:45:32.922478452+11:00
+imports:
+- name: github.com/apex/go-apex
+  version: 76f0273272e5714a65e7500914301dbf8ad1ecd5
+  subpackages:
+  - cloudformation
+- name: github.com/aws/aws-sdk-go
+  version: 0d8e5fdff6a7f73e2c8b84c02330c3c030650b82
+  subpackages:
+  - aws
+  - aws/session
+  - service/cloudwatch
+  - service/cloudwatchevents
+  - service/lambda
+  - aws/awserr
+  - aws/credentials
+  - aws/client
+  - aws/corehandlers
+  - aws/defaults
+  - aws/request
+  - private/endpoints
+  - aws/awsutil
+  - aws/client/metadata
+  - private/protocol
+  - private/protocol/query
+  - private/signer/v4
+  - private/protocol/jsonrpc
+  - private/protocol/restjson
+  - aws/credentials/ec2rolecreds
+  - aws/ec2metadata
+  - private/protocol/query/queryutil
+  - private/protocol/xml/xmlutil
+  - private/protocol/rest
+  - private/protocol/json/jsonutil
+- name: github.com/go-ini/ini
+  version: 193d1ecb466bf97aae8b454a5cfc192941c64809
+- name: github.com/jmespath/go-jmespath
+  version: 0b12d6b521d83fc7f755e7cfc1b1fbdd35a01a74
+devImports: []
