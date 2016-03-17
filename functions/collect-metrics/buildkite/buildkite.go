@@ -3,6 +3,7 @@ package buildkite
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -70,6 +71,20 @@ func (j Job) Queue() string {
 	return "default"
 }
 
+func (j Job) UpdatedAt() time.Time {
+	switch {
+	case j.FinishedAt != nil:
+		return *j.FinishedAt
+	case j.StartedAt != nil:
+		return *j.StartedAt
+	case j.ScheduledAt != nil:
+		return *j.ScheduledAt
+	case j.CreatedAt != nil:
+		return *j.CreatedAt
+	}
+	return time.Time{}
+}
+
 type Pipeline struct {
 	BuildsURL            string     `json:"builds_url"`
 	CreatedAt            *time.Time `json:"created_at"`
@@ -108,6 +123,18 @@ type Build struct {
 	WebURL      string                 `json:"web_url"`
 }
 
+func (b Build) UpdatedAt() time.Time {
+	switch {
+	case b.FinishedAt != nil:
+		return *b.FinishedAt
+	case b.StartedAt != nil:
+		return *b.StartedAt
+	case b.ScheduledAt != nil:
+		return *b.ScheduledAt
+	}
+	return *b.CreatedAt
+}
+
 func nextLink(linkheader string) (*url.URL, error) {
 	links, err := link.Parse(linkheader)
 	if err != nil {
@@ -124,6 +151,7 @@ func nextLink(linkheader string) (*url.URL, error) {
 }
 
 func paginate(req *http.Request, f func(resp *http.Response) error) error {
+	log.Println("Querying", req.URL)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return err
@@ -154,9 +182,10 @@ func paginate(req *http.Request, f func(resp *http.Response) error) error {
 }
 
 type BuildsInput struct {
-	OrgSlug                string
-	ApiToken               string
-	CreatedFrom, CreatedTo time.Time
+	OrgSlug                              string
+	ApiToken                             string
+	CreatedFrom, CreatedTo, FinishedFrom time.Time
+	State                                string
 }
 
 func (i *BuildsInput) URL() (*url.URL, error) {
@@ -178,42 +207,67 @@ func (i *BuildsInput) URL() (*url.URL, error) {
 		v.Set("created_to", i.CreatedTo.Format(dateFormat))
 	}
 
+	if !i.FinishedFrom.IsZero() {
+		v.Set("finished_from", i.FinishedFrom.Format(dateFormat))
+	}
+
+	if i.State != "" {
+		v.Set("state", i.State)
+	}
+
 	u.RawQuery = v.Encode()
 	return u, nil
 }
 
-type BuildsOutput struct {
-	Builds []Build
-	Pages  int
-}
-
-func Builds(input *BuildsInput) (out BuildsOutput, err error) {
+func Builds(input *BuildsInput) (builds BuildSlice, err error) {
 	u, err := input.URL()
 	if err != nil {
-		return out, err
+		return builds, err
 	}
 
 	req, err := http.NewRequest("GET", u.String(), nil)
 	if err != nil {
-		return out, err
+		return builds, err
 	}
 
 	// https://buildkite.com/docs/api#authentication
 	req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", input.ApiToken))
 
-	out.Builds = []Build{}
+	timer := time.Now()
 	err = paginate(req, func(resp *http.Response) error {
 		var page []Build
 		if err := json.NewDecoder(resp.Body).Decode(&page); err != nil {
 			return err
 		}
-		out.Builds = append(out.Builds, page...)
+		builds = append(builds, page...)
 		return nil
 	})
 
 	if err != nil {
-		return out, err
+		return builds, err
 	}
 
-	return out, nil
+	log.Printf("Returned %d builds in %s", len(builds), time.Now().Sub(timer))
+	return builds, nil
+}
+
+type BuildSlice []Build
+
+// Queues returns unique queue names withing the Build
+func (builds BuildSlice) Queues() []string {
+	queueMap := map[string]struct{}{}
+
+	for _, b := range builds {
+		for _, j := range b.Jobs {
+			queueMap[j.Queue()] = struct{}{}
+		}
+	}
+
+	queues := []string{}
+
+	for q := range queueMap {
+		queues = append(queues, q)
+	}
+
+	return queues
 }
