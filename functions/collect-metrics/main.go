@@ -75,12 +75,6 @@ func main() {
 				res.Pipelines[build.Pipeline.Name] = Counts{}
 			}
 
-			if afterTime(cutoff, build.CreatedAt, build.FinishedAt) {
-				log.Printf("Adding build %s to stats", build.ID)
-				res.Counts = res.Counts.addBuild(build)
-				res.Pipelines[build.Pipeline.Name] = res.Pipelines[build.Pipeline.Name].addBuild(build)
-			}
-
 			var buildQueues = map[string]int{}
 			for _, job := range build.Jobs {
 				if _, ok := res.Queues[job.Queue()]; !ok {
@@ -88,13 +82,18 @@ func main() {
 				}
 
 				if afterTime(cutoff, job.CreatedAt, job.FinishedAt, job.ScheduledAt, job.StartedAt) {
-					log.Printf("Adding job %s to stats", job.ID)
+					log.Printf("Adding job to stats (id=%q, pipeline=%q, queue=%s)", job.ID, build.Pipeline.Name, job.Queue())
 					res.Counts = res.Counts.addJob(job)
 					res.Pipelines[build.Pipeline.Name] = res.Pipelines[build.Pipeline.Name].addJob(job)
 					res.Queues[job.Queue()] = res.Queues[job.Queue()].addJob(job)
 					buildQueues[job.Queue()]++
 				}
+			}
 
+			if len(buildQueues) > 0 {
+				log.Printf("Adding build to stats (id=%q, pipeline=%q)", build.ID, build.Pipeline.Name)
+				res.Counts = res.Counts.addBuild(build)
+				res.Pipelines[build.Pipeline.Name] = res.Pipelines[build.Pipeline.Name].addBuild(build)
 			}
 
 			for queue := range buildQueues {
@@ -114,15 +113,6 @@ func main() {
 
 		return res, nil
 	})
-}
-
-func afterTime(after time.Time, times ...*time.Time) bool {
-	for _, t := range times {
-		if t != nil && t.After(after) {
-			return true
-		}
-	}
-	return false
 }
 
 type Config struct {
