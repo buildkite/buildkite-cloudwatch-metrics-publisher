@@ -3,9 +3,7 @@ package main
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"log"
-	"net/http"
 	"time"
 
 	"github.com/apex/go-apex"
@@ -46,32 +44,72 @@ func main() {
 			return nil, errors.New("No BuildkiteOrgSlug provided")
 		}
 
-		log.Printf("Querying buildkite for builds for org %s for past 5 mins", conf.BuildkiteOrgSlug)
-		builds, err := recentBuildkiteBuilds(conf.BuildkiteOrgSlug, conf.BuildkiteApiAccessToken)
-		if err != nil {
-			return nil, err
-		}
-
-		var res Result = Result{
+		var res *Result = &Result{
 			Queues:    map[string]Counts{},
 			Pipelines: map[string]Counts{},
 		}
 
-		log.Printf("Aggregating results from %d builds", len(builds))
-		for _, build := range builds {
-			res.Counts = res.Counts.addBuild(build)
-			res.Pipelines[build.Pipeline.Name] = res.Pipelines[build.Pipeline.Name].addBuild(build)
+		// Algorithm:
+		// Get Builds with finished_from = 24 hours ago
+		// Build results with zero values for pipelines/queues
+		// Get all running and scheduled builds, add to results
 
-			var buildQueues = map[string]int{}
-			for _, job := range build.Jobs {
-				res.Counts = res.Counts.addJob(job)
-				res.Pipelines[build.Pipeline.Name] = res.Pipelines[build.Pipeline.Name].addJob(job)
-				res.Queues[job.Queue()] = res.Queues[job.Queue()].addJob(job)
-				buildQueues[job.Queue()]++
+		builds, err := buildkite.Builds(&buildkite.BuildsInput{
+			OrgSlug:      conf.BuildkiteOrgSlug,
+			ApiToken:     conf.BuildkiteApiAccessToken,
+			FinishedFrom: time.Now().UTC().Add(time.Hour * -24),
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		for _, queue := range builds.Queues() {
+			res.Queues[queue] = Counts{}
+		}
+
+		for _, build := range builds {
+			if _, ok := res.Pipelines[build.Pipeline.Name]; !ok {
+				res.Pipelines[build.Pipeline.Name] = Counts{}
+			}
+		}
+
+		states := []string{"scheduled", "running"}
+
+		for _, state := range states {
+			builds, err := buildkite.Builds(&buildkite.BuildsInput{
+				OrgSlug:  conf.BuildkiteOrgSlug,
+				ApiToken: conf.BuildkiteApiAccessToken,
+				State:    state,
+			})
+			if err != nil {
+				return nil, err
 			}
 
-			for queue := range buildQueues {
-				res.Queues[queue] = res.Queues[queue].addBuild(build)
+			for _, build := range builds {
+				log.Printf("Adding build to stats (id=%q, pipeline=%q, branch=%q, state=%q)",
+					build.ID, build.Pipeline.Name, build.Branch, build.State)
+
+				res.Counts = res.Counts.addBuild(build)
+				res.Pipelines[build.Pipeline.Name] = res.Pipelines[build.Pipeline.Name].addBuild(build)
+
+				var buildQueues = map[string]int{}
+
+				for _, job := range build.Jobs {
+					log.Printf("Adding job to stats (id=%q, pipeline=%q, queue=%q, type=%q, state=%q)",
+						job.ID, build.Pipeline.Name, job.Queue(), job.Type, job.State)
+
+					res.Counts = res.Counts.addJob(job)
+					res.Pipelines[build.Pipeline.Name] = res.Pipelines[build.Pipeline.Name].addJob(job)
+					res.Queues[job.Queue()] = res.Queues[job.Queue()].addJob(job)
+					buildQueues[job.Queue()]++
+				}
+
+				if len(buildQueues) > 0 {
+					for queue := range buildQueues {
+						log.Printf("Adding stats for build to queue %s", queue)
+						res.Queues[queue] = res.Queues[queue].addBuild(build)
+					}
+				}
 			}
 		}
 
@@ -80,7 +118,7 @@ func main() {
 
 		for _, chunk := range chunkMetricData(10, metrics) {
 			log.Printf("Submitting chunk of %d metrics to Cloudwatch", len(chunk))
-			if err = putMetricData(svc, chunk); err != nil {
+			if err := putMetricData(svc, chunk); err != nil {
 				return nil, err
 			}
 		}
@@ -151,63 +189,23 @@ type Result struct {
 	Queues, Pipelines map[string]Counts
 }
 
-func (r Result) extractMetricData() []*cloudwatch.MetricDatum {
+func (r *Result) extractMetricData() []*cloudwatch.MetricDatum {
 	data := []*cloudwatch.MetricDatum{}
 	data = append(data, r.Counts.asMetrics(nil)...)
 
-	for name, _ := range r.Queues {
-		data = append(data, r.Counts.asMetrics([]*cloudwatch.Dimension{
+	for name, c := range r.Queues {
+		data = append(data, c.asMetrics([]*cloudwatch.Dimension{
 			{Name: aws.String("Queue"), Value: aws.String(name)},
 		})...)
 	}
 
-	// write pipeline metrics, include project dimension for backwards compat
-	for name, _ := range r.Pipelines {
-		data = append(data, r.Counts.asMetrics([]*cloudwatch.Dimension{
-			{Name: aws.String("Project"), Value: aws.String(name)},
+	for name, c := range r.Pipelines {
+		data = append(data, c.asMetrics([]*cloudwatch.Dimension{
 			{Name: aws.String("Pipeline"), Value: aws.String(name)},
 		})...)
 	}
 
 	return data
-}
-
-func recentBuildkiteBuilds(orgSlug, apiKey string) ([]buildkite.Build, error) {
-	url := fmt.Sprintf(
-		"https://api.buildkite.com/v2/organizations/%s/builds?created_from=%s&page=%d",
-		orgSlug,
-		time.Now().UTC().Add(time.Minute*-5).Format("2006-01-02T15:04:05Z"),
-		1,
-	)
-
-	req, err := http.NewRequest("GET", url, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", apiKey))
-
-	//Issue the request and get the bearer token from the JSON you get back
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("Failed to request %s", url)
-	}
-
-	// TODO: Pagination, but ain't nobody got time for that.
-	// log.Printf("%#v", resp.Header.Get("Link"))
-
-	var builds []buildkite.Build
-	if err = json.NewDecoder(resp.Body).Decode(&builds); err != nil {
-		return nil, err
-	}
-
-	return builds, nil
 }
 
 func chunkMetricData(size int, data []*cloudwatch.MetricDatum) [][]*cloudwatch.MetricDatum {

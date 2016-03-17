@@ -47,6 +47,12 @@ make upload
 make create-stack
 ```
 
+Or you can test functions directly:
+
+```
+go run functions/collect-metrics/*.go <<< '{ "event": { "BuildkiteApiAccessToken": "xyz", "BuildkiteOrgSlug": "myslug" } }'
+```
+
 ## License
 
 See [LICENSE.md](LICENSE.md) (MIT)
