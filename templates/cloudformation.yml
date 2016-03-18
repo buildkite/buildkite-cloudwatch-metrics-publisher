@@ -9,6 +9,15 @@ Parameters:
     Description: Your Buildkite organization slug
     Type: String
 
+  KeyName:
+    Description: The ssh keypair used to access the timer instance
+    Type: AWS::EC2::KeyPair::KeyName
+    Default: default
+
+Conditions:
+    UseSpotInstances:
+      !Not [ !Equals [ 0, 0 ] ]
+
 Resources:
   LambdaExecutionRole:
     Type: AWS::IAM::Role
@@ -74,7 +83,6 @@ Resources:
       Runtime: nodejs
       Timeout: 25
 
-
   LambdaTimerService:
     Type: AWS::Lambda::Function
     Properties:
@@ -93,3 +101,43 @@ Resources:
       Name: $(AWS::StackName)-LambdaTimer
       ScheduleExpression: rate(5 minutes)
       LambdaArn: $(InvokeCollectMetrics[Arn])
+
+  TimerInstanceIAMRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: [ ec2.amazonaws.com ]
+            Action: sts:AssumeRole
+      Path: "/"
+      Policies:
+        - PolicyName: root
+          PolicyDocument:
+            Statement:
+              - Effect: Allow
+                Action:
+                  - lambda:*
+                Resource: $(InvokeCollectMetrics[Arn])
+
+  TimerInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: /
+      Roles: [ $(TimerInstanceIAMRole) ]
+
+  TimerInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      KeyName: $(KeyName)
+      InstanceType: t2.nano
+      ImageId: ami-8fcee4e5
+      IamInstanceProfile: $(TimerInstanceProfile)
+      UserData: !Base64 |
+        #!/bin/bash -xv
+        export AWS_DEFAULT_REGION=$(AWS::Region)
+        while true ; do
+          aws lambda invoke --function-name "$(InvokeCollectMetrics[Arn])" -
+          sleep 30
+        done
