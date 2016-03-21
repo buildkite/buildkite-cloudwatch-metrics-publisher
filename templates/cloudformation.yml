@@ -9,14 +9,20 @@ Parameters:
     Description: Your Buildkite organization slug
     Type: String
 
+  UsePollerInstance:
+    Description: Whether to use a polling instance for 30 second resolution
+    Type: String
+    Default: "false"
+    AllowedValues: ["true","false"]
+
   KeyName:
     Description: The ssh keypair used to access the timer instance
     Type: AWS::EC2::KeyPair::KeyName
     Default: default
 
 Conditions:
-    UseSpotInstances:
-      !Not [ !Equals [ 0, 0 ] ]
+    UsePollerInstance:
+      !Equals [ "true", $(UsePollerInstance) ]
 
 Resources:
   LambdaExecutionRole:
@@ -103,6 +109,7 @@ Resources:
       LambdaArn: $(InvokeCollectMetrics[Arn])
 
   TimerInstanceIAMRole:
+    Condition: UsePollerInstance
     Type: AWS::IAM::Role
     Properties:
       AssumeRolePolicyDocument:
@@ -122,12 +129,14 @@ Resources:
                 Resource: $(InvokeCollectMetrics[Arn])
 
   TimerInstanceProfile:
+    Condition: UsePollerInstance
     Type: AWS::IAM::InstanceProfile
     Properties:
       Path: /
       Roles: [ $(TimerInstanceIAMRole) ]
 
   TimerInstance:
+    Condition: UsePollerInstance
     Type: AWS::EC2::Instance
     Properties:
       KeyName: $(KeyName)
