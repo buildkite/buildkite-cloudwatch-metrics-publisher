@@ -40,17 +40,10 @@ Buildkite > (Pipeline) > ScheduledJobsCount
 
 ## Developing
 
-Development is done with [Apex](https://github.com/apex/apex). Once installed and you have the correct credentials in place you can run:
-
-```bash
-make upload
-make create-stack
-```
-
-Or you can test functions directly:
+You can build and run the binary tool locally with golang installed:
 
 ```
-go run functions/collect-metrics/*.go <<< '{ "event": { "BuildkiteApiAccessToken": "xyz", "BuildkiteOrgSlug": "myslug" } }'
+go run cli/buildkite-cloudwatch-metrics/*.go -org [myorg] -token [mytoken]
 ```
 
 ## License
