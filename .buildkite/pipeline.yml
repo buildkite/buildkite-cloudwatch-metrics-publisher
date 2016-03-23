@@ -1,7 +1,7 @@
 steps:
   -
     name: "Build binary"
-    command: "make build"
+    command: "make clean build"
     artifact_paths: "build/*"
     agents:
       queue: aws-stack
