@@ -1,0 +1,6 @@
+build:
+  build: .buildkite/
+  command: "make build"
+  volumes:
+    - .:/go/src/github.com/buildkite/buildkite-cloudwatch-metrics-publisher
+  working_dir: /go/src/github.com/buildkite/buildkite-cloudwatch-metrics-publisher

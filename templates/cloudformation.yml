@@ -74,7 +74,7 @@ Resources:
       KeyName: $(KeyName)
       UserData: !Base64 |
         #!/bin/bash -xve
-        curl -Lf -o /usr/bin/buildkite-cloudwatch-metrics $(BinUrl)
+        aws s3 cp $(BinUrl) /usr/bin/buildkite-cloudwatch-metrics $(BinUrl)
         chmod +x /usr/bin/buildkite-cloudwatch-metrics
         /usr/bin/buildkite-cloudwatch-metrics -org "$(BuildkiteOrgSlug)" -token "$(BuildkiteApiAccessToken)"
 

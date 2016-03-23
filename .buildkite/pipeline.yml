@@ -1,12 +1,15 @@
 steps:
   -
     name: "Build binary"
-    command: ".buildkite/build.sh"
+    command: "make build"
+    artifact_paths: "build/*"
     agents:
       queue: aws-stack
+    environment:
+      BUILDKITE_DOCKER_COMPOSE_CONTAINER: build
+
   -
     name: "Upload binary"
     command: ".buildkite/upload.sh"
-    branches: master
     agents:
       queue: aws-stack
