@@ -14,6 +14,11 @@ Parameters:
     Type: AWS::EC2::KeyPair::KeyName
     Default: default
 
+  BinUrl:
+    Description: The s3 path to download the binary from
+    Type: String
+    Default: s3://buildkite-cloudwatch-metrics-publisher/master/buildkite-cloudwatch-metrics
+
 Resources:
   IAMRole:
     Type: AWS::IAM::Role
@@ -44,6 +49,7 @@ Resources:
     Type: AWS::AutoScaling::AutoScalingGroup
     Properties:
       LaunchConfigurationName: $(LaunchConfiguration)
+      AvailabilityZones: !GetAZs
       MinSize: 1
       MaxSize: 1
 
@@ -61,7 +67,6 @@ Resources:
     Type: AWS::AutoScaling::LaunchConfiguration
     Properties:
       AssociatePublicIpAddress: true
-      AvailabilityZones: !GetAZs
       InstanceMonitoring: true
       SecurityGroups: [ $(SecurityGroup) ]
       ImageId: ami-8fcee4e5
@@ -70,5 +75,7 @@ Resources:
       KeyName: $(KeyName)
       UserData: !Base64 |
         #!/bin/bash -xve
-        echo hello world
+        curl -Lf -o /usr/bin/buildkite-cloudwatch-metrics $(BinUrl)
+        chmod +x /usr/bin/buildkite-cloudwatch-metrics
+        /usr/bin/buildkite-cloudwatch-metrics -org "$(BuildkiteOrgSlug)" -token "$(BuildkiteApiAccessToken)"
 
