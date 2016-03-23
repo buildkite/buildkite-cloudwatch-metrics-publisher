@@ -1,6 +1,6 @@
 # Buildkite Cloudwatch Metrics Publisher
 
-[![Launch BK Cloudwatch Metrics Publisher](http://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/images/cloudformation-launch-stack-button.png)](https://console.aws.amazon.com/cloudformation/home?region=us-east-1#/stacks/new?stackName=buildkite-cloudwatch-metrics-publisher&templateURL=https://s3.amazonaws.com/buildkite-cloudwatch-metrics-publisher/cloudwatch-metrics-publisher.json)
+[![Launch BK Cloudwatch Metrics Publisher](http://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/images/cloudformation-launch-stack-button.png)](https://console.aws.amazon.com/cloudformation/home?region=us-east-1#/stacks/new?stackName=buildkite-cloudwatch-metrics-publisher&templateURL=https://s3.amazonaws.com/buildkite-cloudwatch-metrics-publisher/master/cloudwatch-metrics-publisher.json)
 
 Publish [Buildkite](https://buildkite.com/) job queue statistics to [AWS Cloudwatch](http://aws.amazon.com/cloudwatch/) for easy EC2 auto-scaling of your build agents.
 
@@ -15,7 +15,7 @@ aws cloudformation create-stack \
 	--output text \
 	--stack-name buildkite-cloudwatch-metrics-publisher \
 	--disable-rollback \
-	--template-body "https://s3.amazonaws.com/buildkite-cloudwatch-metrics-publisher/cloudwatch-metrics-publisher.json" \
+	--template-body "https://s3.amazonaws.com/buildkite-cloudwatch-metrics-publisher/master/cloudwatch-metrics-publisher.json" \
 	--capabilities CAPABILITY_IAM \
 	--parameters ParameterKey=BuildkiteApiAccessToken,ParameterValue=BUILDKITE_API_TOKEN_GOES_HERE \
 	ParameterKey=BuildkiteOrgSlug,ParameterValue=BUILDKITE_ORG_SLUG_GOES_HERE
