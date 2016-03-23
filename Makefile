@@ -1,7 +1,7 @@
 
 keyname = default
 branch = $(shell git rev-parse --abbrev-ref HEAD)
-binurl = s3://buildkite-cloudwatch-metrics-publisher/$(branch)/buildkite-cloudwatch-metrics
+binurl = s3://buildkite-cloudwatch-metrics-publisher/master/buildkite-cloudwatch-metrics
 
 all: build/cloudwatch-metrics-publisher.json
 
