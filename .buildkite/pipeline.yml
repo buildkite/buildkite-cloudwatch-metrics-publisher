@@ -6,7 +6,7 @@ steps:
     agents:
       queue: aws-stack
     env:
-      - BUILDKITE_DOCKER_COMPOSE_CONTAINER=build
+      BUILDKITE_DOCKER_COMPOSE_CONTAINER: build
 
   - wait
 
