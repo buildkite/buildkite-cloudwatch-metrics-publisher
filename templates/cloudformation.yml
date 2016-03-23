@@ -74,7 +74,8 @@ Resources:
       KeyName: $(KeyName)
       UserData: !Base64 |
         #!/bin/bash -xve
+        export INSTANCE=`curl http://169.254.169.254/latest/meta-data/instance-id`
         aws s3 cp $(BinUrl) /usr/bin/buildkite-cloudwatch-metrics
         chmod +x /usr/bin/buildkite-cloudwatch-metrics
-        /usr/bin/buildkite-cloudwatch-metrics -org "$(BuildkiteOrgSlug)" -token "$(BuildkiteApiAccessToken)"
-
+        /usr/bin/buildkite-cloudwatch-metrics -org "$(BuildkiteOrgSlug)" -token "$(BuildkiteApiAccessToken)" -interval 30s ||
+        aws autoscaling set-instance-health --instance-id $INSTANCE --health-status Unhealthy

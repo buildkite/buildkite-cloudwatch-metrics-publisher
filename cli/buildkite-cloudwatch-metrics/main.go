@@ -29,11 +29,10 @@ func main() {
 	var (
 		accessToken = flag.String("token", "", "A Buildkite API Access Token")
 		orgSlug     = flag.String("org", "", "A Buildkite Organization Slug")
+		interval    = flag.Duration("interval", 0, "Update metrics every interval, rather than once")
 	)
 
 	flag.Parse()
-
-	svc := cloudwatch.New(session.New())
 
 	if *accessToken == "" {
 		log.Fatal("Must provide a value for -token")
@@ -43,6 +42,44 @@ func main() {
 		log.Fatal("Must provide a value for -org")
 	}
 
+	if err := runCollector(*orgSlug, *accessToken, time.Hour*24); err != nil {
+		log.Fatal(err)
+	}
+
+	if *interval > 0 {
+		for _ = range time.NewTicker(*interval).C {
+			if err := runCollector(*orgSlug, *accessToken, time.Hour); err != nil {
+				log.Println(err)
+			}
+		}
+	}
+}
+
+func runCollector(orgSlug, accessToken string, historical time.Duration) error {
+	svc := cloudwatch.New(session.New())
+
+	log.Printf("Collecting buildkite metrics from org %s", orgSlug)
+	result, err := collectResults(orgSlug, accessToken, historical)
+	if err != nil {
+		return err
+	}
+
+	log.Printf("Extracting cloudwatch metrics from results")
+	metrics := result.extractMetricData()
+
+	for _, chunk := range chunkMetricData(10, metrics) {
+		log.Printf("Submitting chunk of %d metrics to Cloudwatch", len(chunk))
+		if err := putMetricData(svc, chunk); err != nil {
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+func collectResults(orgSlug, accessToken string, historical time.Duration) (*Result, error) {
 	var res *Result = &Result{
 		Queues:    map[string]Counts{},
 		Pipelines: map[string]Counts{},
@@ -54,12 +91,12 @@ func main() {
 	// Get all running and scheduled builds, add to results
 
 	builds, err := buildkite.Builds(&buildkite.BuildsInput{
-		OrgSlug:      *orgSlug,
-		ApiToken:     *accessToken,
-		FinishedFrom: time.Now().UTC().Add(time.Hour * -24),
+		OrgSlug:      orgSlug,
+		ApiToken:     accessToken,
+		FinishedFrom: time.Now().UTC().Add(historical * -1),
 	})
 	if err != nil {
-		log.Fatal(err)
+		return res, err
 	}
 
 	for _, queue := range builds.Queues() {
@@ -76,12 +113,12 @@ func main() {
 
 	for _, state := range states {
 		builds, err := buildkite.Builds(&buildkite.BuildsInput{
-			OrgSlug:  *orgSlug,
-			ApiToken: *accessToken,
+			OrgSlug:  orgSlug,
+			ApiToken: accessToken,
 			State:    state,
 		})
 		if err != nil {
-			log.Fatal(err)
+			return res, err
 		}
 
 		for _, build := range builds {
@@ -112,17 +149,7 @@ func main() {
 		}
 	}
 
-	log.Printf("Extracting cloudwatch metrics from results")
-	metrics := res.extractMetricData()
-
-	for _, chunk := range chunkMetricData(10, metrics) {
-		log.Printf("Submitting chunk of %d metrics to Cloudwatch", len(chunk))
-		if err := putMetricData(svc, chunk); err != nil {
-			if err != nil {
-				log.Fatal(err)
-			}
-		}
-	}
+	return res, nil
 }
 
 type Counts struct {

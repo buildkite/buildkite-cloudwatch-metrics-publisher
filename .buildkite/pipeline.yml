@@ -11,7 +11,7 @@ steps:
   - wait
 
   -
-    name: "Upload binary"
+    name: "Upload build files"
     command: ".buildkite/upload.sh"
     agents:
       queue: aws-stack
