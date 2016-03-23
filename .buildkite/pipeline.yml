@@ -5,7 +5,7 @@ steps:
     artifact_paths: "build/*"
     agents:
       queue: aws-stack
-    environment:
+    env:
       - BUILDKITE_DOCKER_COMPOSE_CONTAINER=build
 
   - wait
