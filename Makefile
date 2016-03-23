@@ -22,7 +22,7 @@ build: build/cloudwatch-metrics-publisher.json build/buildkite-cloudwatch-metric
 
 upload: build
 	aws s3 sync --acl public-read build \
-		s3://buildkite-cloudwatch-metrics-publisher/$(shell git rev-parse --abbrev-ref HEAD)
+		s3://buildkite-cloudwatch-metrics-publisher/$(branch)
 
 create-stack: build/cloudwatch-metrics-publisher.json
 	aws cloudformation create-stack \
