@@ -1,4 +1,12 @@
 steps:
   -
-    name: "🔨"
-    command: ".buildkite/tests.sh"
+    name: "Build binary"
+    command: ".buildkite/build.sh"
+    agents:
+      queue: aws-stack
+  -
+    name: "Upload binary"
+    command: ".buildkite/upload.sh"
+    branches: master
+    agents:
+      queue: aws-stack
