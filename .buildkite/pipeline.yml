@@ -8,6 +8,8 @@ steps:
     environment:
       BUILDKITE_DOCKER_COMPOSE_CONTAINER: build
 
+  - wait
+
   -
     name: "Upload binary"
     command: ".buildkite/upload.sh"
