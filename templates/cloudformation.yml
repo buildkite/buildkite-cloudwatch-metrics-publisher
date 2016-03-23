@@ -9,18 +9,26 @@ Parameters:
     Description: Your Buildkite organization slug
     Type: String
 
+  KeyName:
+    Description: The ssh keypair used for the instance
+    Type: AWS::EC2::KeyPair::KeyName
+    Default: default
+
+  BinUrl:
+    Description: The s3 path to download the binary from
+    Type: String
+    Default: s3://buildkite-cloudwatch-metrics-publisher/master/buildkite-cloudwatch-metrics
+
 Resources:
-  LambdaExecutionRole:
+  IAMRole:
     Type: AWS::IAM::Role
     Properties:
       AssumeRolePolicyDocument:
         Statement:
           - Effect: Allow
             Principal:
-              Service: [ lambda.amazonaws.com ]
+              Service: [ ec2.amazonaws.com ]
             Action: sts:AssumeRole
-      ManagedPolicyArns:
-        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
       Path: "/"
       Policies:
         - PolicyName: root
@@ -28,68 +36,46 @@ Resources:
             Statement:
               - Effect: Allow
                 Action:
-                  - cloudformation:DescribeStacks
-                  - events:PutRule
-                  - events:PutTargets
-                  - lambda:*
                   - cloudwatch:PutMetricData
                 Resource: "*"
 
-  CollectMetrics:
-    Type: AWS::Lambda::Function
+  InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
     Properties:
-      Handler: index.handle
-      Role: $(LambdaExecutionRole[Arn])
-      Code:
-        S3Bucket: buildkite-cloudwatch-metrics-publisher
-        S3Key: collect-metrics.zip
-      Runtime: nodejs
-      Timeout: 25
+      Path: /
+      Roles: [ $(IAMRole) ]
 
-  InvokeCollectMetrics:
-    Type: AWS::Lambda::Function
+  AutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
     Properties:
-      Handler: index.handle
-      Role: $(LambdaExecutionRole[Arn])
-      Code:
-        ZipFile: |
-          var aws = require('aws-sdk');
-          var lambda = new aws.Lambda();
-          exports.handle = function(event, context) {
-            lambda.invoke({
-              FunctionName: '$(CollectMetrics)',
-              Payload: JSON.stringify({
-                BuildkiteApiAccessToken: '$(BuildkiteApiAccessToken)',
-                BuildkiteOrgSlug: '$(BuildkiteOrgSlug)'
-              }, null, 2)
-            }, function(error, data) {
-              if (error) {
-                context.done('error', error);
-              }
-              if(data.Payload){
-               context.succeed(data.Payload)
-              }
-            });
-          }
-      Runtime: nodejs
-      Timeout: 25
+      LaunchConfigurationName: $(LaunchConfiguration)
+      AvailabilityZones: !GetAZs
+      MinSize: 1
+      MaxSize: 1
 
-
-  LambdaTimerService:
-    Type: AWS::Lambda::Function
+  SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
     Properties:
-      Handler: index.handle
-      Role: $(LambdaExecutionRole[Arn])
-      Code:
-        S3Bucket: buildkite-cloudwatch-metrics-publisher
-        S3Key: lambda-timer.zip
-      Runtime: nodejs
-      Timeout: 25
+      GroupDescription: VPC/EC2 Security Group
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
 
-  LambdaTimer:
-    Type: Custom::LambdaTimer
+  LaunchConfiguration:
+    Type: AWS::AutoScaling::LaunchConfiguration
     Properties:
-      ServiceToken: $(LambdaTimerService[Arn])
-      Name: $(AWS::StackName)-LambdaTimer
-      ScheduleExpression: rate(5 minutes)
-      LambdaArn: $(InvokeCollectMetrics[Arn])
+      InstanceMonitoring: true
+      SecurityGroups: [ $(SecurityGroup) ]
+      ImageId: ami-8fcee4e5
+      InstanceType: t2.nano
+      IamInstanceProfile: $(InstanceProfile)
+      KeyName: $(KeyName)
+      UserData: !Base64 |
+        #!/bin/bash -xve
+        export INSTANCE=`curl http://169.254.169.254/latest/meta-data/instance-id`
+        aws s3 cp $(BinUrl) /usr/bin/buildkite-cloudwatch-metrics
+        chmod +x /usr/bin/buildkite-cloudwatch-metrics
+        /usr/bin/buildkite-cloudwatch-metrics -org "$(BuildkiteOrgSlug)" -token "$(BuildkiteApiAccessToken)" -interval 30s ||
+        aws autoscaling set-instance-health --instance-id $INSTANCE --health-status Unhealthy

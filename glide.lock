@@ -1,18 +1,12 @@
-hash: 63df2146086c8a5d411f0d6ddf0a33cc59644425a06556fe0337e84a132ec84a
-updated: 2016-02-10T12:45:32.922478452+11:00
+hash: 2eab59866b9707e3903496407862021107227b8c5d7b127f6c2a42c60f8f96e8
+updated: 2016-03-23T15:23:14.794702387+11:00
 imports:
-- name: github.com/apex/go-apex
-  version: 76f0273272e5714a65e7500914301dbf8ad1ecd5
-  subpackages:
-  - cloudformation
 - name: github.com/aws/aws-sdk-go
-  version: 0d8e5fdff6a7f73e2c8b84c02330c3c030650b82
+  version: f0748927a5d7568334ff0858de06c2812da89d6a
   subpackages:
   - aws
   - aws/session
   - service/cloudwatch
-  - service/cloudwatchevents
-  - service/lambda
   - aws/awserr
   - aws/credentials
   - aws/client
@@ -25,16 +19,19 @@ imports:
   - private/protocol
   - private/protocol/query
   - private/signer/v4
-  - private/protocol/jsonrpc
-  - private/protocol/restjson
   - aws/credentials/ec2rolecreds
   - aws/ec2metadata
   - private/protocol/query/queryutil
   - private/protocol/xml/xmlutil
   - private/protocol/rest
-  - private/protocol/json/jsonutil
+- name: github.com/buildkite/buildkite-cloudwatch-metrics-publisher
+  version: 9908b1839a78929af7c985ca3e41dcf933945472
+  subpackages:
+  - buildkite
 - name: github.com/go-ini/ini
-  version: 193d1ecb466bf97aae8b454a5cfc192941c64809
+  version: 12f418cc7edc5a618a51407b7ac1f1f512139df3
 - name: github.com/jmespath/go-jmespath
   version: 0b12d6b521d83fc7f755e7cfc1b1fbdd35a01a74
+- name: github.com/tent/http-link-go
+  version: ac974c61c2f990f4115b119354b5e0b47550e888
 devImports: []

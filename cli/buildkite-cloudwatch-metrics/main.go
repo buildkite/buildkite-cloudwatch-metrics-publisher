@@ -1,16 +1,14 @@
 package main
 
 import (
-	"encoding/json"
-	"errors"
+	"flag"
 	"log"
 	"time"
 
-	"github.com/apex/go-apex"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/cloudwatch"
-	"github.com/buildkite/buildkite-cloudwatch-metrics-publisher/functions/collect-metrics/buildkite"
+	"github.com/buildkite/buildkite-cloudwatch-metrics-publisher/buildkite"
 )
 
 // Generates:
@@ -28,107 +26,130 @@ import (
 // Buildkite > (Pipeline) > ScheduledJobsCount
 
 func main() {
-	apex.HandleFunc(func(event json.RawMessage, ctx *apex.Context) (interface{}, error) {
-		svc := cloudwatch.New(session.New())
+	var (
+		accessToken = flag.String("token", "", "A Buildkite API Access Token")
+		orgSlug     = flag.String("org", "", "A Buildkite Organization Slug")
+		interval    = flag.Duration("interval", 0, "Update metrics every interval, rather than once")
+	)
 
-		var conf Config
-		if err := json.Unmarshal(event, &conf); err != nil {
-			return nil, err
+	flag.Parse()
+
+	if *accessToken == "" {
+		log.Fatal("Must provide a value for -token")
+	}
+
+	if *orgSlug == "" {
+		log.Fatal("Must provide a value for -org")
+	}
+
+	if err := runCollector(*orgSlug, *accessToken, time.Hour*24); err != nil {
+		log.Fatal(err)
+	}
+
+	if *interval > 0 {
+		for _ = range time.NewTicker(*interval).C {
+			if err := runCollector(*orgSlug, *accessToken, time.Hour); err != nil {
+				log.Println(err)
+			}
 		}
+	}
+}
 
-		if conf.BuildkiteApiAccessToken == "" {
-			return nil, errors.New("No BuildkiteApiAccessToken provided")
+func runCollector(orgSlug, accessToken string, historical time.Duration) error {
+	svc := cloudwatch.New(session.New())
+
+	log.Printf("Collecting buildkite metrics from org %s", orgSlug)
+	result, err := collectResults(orgSlug, accessToken, historical)
+	if err != nil {
+		return err
+	}
+
+	log.Printf("Extracting cloudwatch metrics from results")
+	metrics := result.extractMetricData()
+
+	for _, chunk := range chunkMetricData(10, metrics) {
+		log.Printf("Submitting chunk of %d metrics to Cloudwatch", len(chunk))
+		if err := putMetricData(svc, chunk); err != nil {
+			if err != nil {
+				return err
+			}
 		}
+	}
 
-		if conf.BuildkiteOrgSlug == "" {
-			return nil, errors.New("No BuildkiteOrgSlug provided")
+	return nil
+}
+
+func collectResults(orgSlug, accessToken string, historical time.Duration) (*Result, error) {
+	var res *Result = &Result{
+		Queues:    map[string]Counts{},
+		Pipelines: map[string]Counts{},
+	}
+
+	// Algorithm:
+	// Get Builds with finished_from = 24 hours ago
+	// Build results with zero values for pipelines/queues
+	// Get all running and scheduled builds, add to results
+
+	builds, err := buildkite.Builds(&buildkite.BuildsInput{
+		OrgSlug:      orgSlug,
+		ApiToken:     accessToken,
+		FinishedFrom: time.Now().UTC().Add(historical * -1),
+	})
+	if err != nil {
+		return res, err
+	}
+
+	for _, queue := range builds.Queues() {
+		res.Queues[queue] = Counts{}
+	}
+
+	for _, build := range builds {
+		if _, ok := res.Pipelines[build.Pipeline.Name]; !ok {
+			res.Pipelines[build.Pipeline.Name] = Counts{}
 		}
+	}
 
-		var res *Result = &Result{
-			Queues:    map[string]Counts{},
-			Pipelines: map[string]Counts{},
-		}
+	states := []string{"scheduled", "running"}
 
-		// Algorithm:
-		// Get Builds with finished_from = 24 hours ago
-		// Build results with zero values for pipelines/queues
-		// Get all running and scheduled builds, add to results
-
+	for _, state := range states {
 		builds, err := buildkite.Builds(&buildkite.BuildsInput{
-			OrgSlug:      conf.BuildkiteOrgSlug,
-			ApiToken:     conf.BuildkiteApiAccessToken,
-			FinishedFrom: time.Now().UTC().Add(time.Hour * -24),
+			OrgSlug:  orgSlug,
+			ApiToken: accessToken,
+			State:    state,
 		})
 		if err != nil {
-			return nil, err
-		}
-
-		for _, queue := range builds.Queues() {
-			res.Queues[queue] = Counts{}
+			return res, err
 		}
 
 		for _, build := range builds {
-			if _, ok := res.Pipelines[build.Pipeline.Name]; !ok {
-				res.Pipelines[build.Pipeline.Name] = Counts{}
+			log.Printf("Adding build to stats (id=%q, pipeline=%q, branch=%q, state=%q)",
+				build.ID, build.Pipeline.Name, build.Branch, build.State)
+
+			res.Counts = res.Counts.addBuild(build)
+			res.Pipelines[build.Pipeline.Name] = res.Pipelines[build.Pipeline.Name].addBuild(build)
+
+			var buildQueues = map[string]int{}
+
+			for _, job := range build.Jobs {
+				log.Printf("Adding job to stats (id=%q, pipeline=%q, queue=%q, type=%q, state=%q)",
+					job.ID, build.Pipeline.Name, job.Queue(), job.Type, job.State)
+
+				res.Counts = res.Counts.addJob(job)
+				res.Pipelines[build.Pipeline.Name] = res.Pipelines[build.Pipeline.Name].addJob(job)
+				res.Queues[job.Queue()] = res.Queues[job.Queue()].addJob(job)
+				buildQueues[job.Queue()]++
 			}
-		}
 
-		states := []string{"scheduled", "running"}
-
-		for _, state := range states {
-			builds, err := buildkite.Builds(&buildkite.BuildsInput{
-				OrgSlug:  conf.BuildkiteOrgSlug,
-				ApiToken: conf.BuildkiteApiAccessToken,
-				State:    state,
-			})
-			if err != nil {
-				return nil, err
-			}
-
-			for _, build := range builds {
-				log.Printf("Adding build to stats (id=%q, pipeline=%q, branch=%q, state=%q)",
-					build.ID, build.Pipeline.Name, build.Branch, build.State)
-
-				res.Counts = res.Counts.addBuild(build)
-				res.Pipelines[build.Pipeline.Name] = res.Pipelines[build.Pipeline.Name].addBuild(build)
-
-				var buildQueues = map[string]int{}
-
-				for _, job := range build.Jobs {
-					log.Printf("Adding job to stats (id=%q, pipeline=%q, queue=%q, type=%q, state=%q)",
-						job.ID, build.Pipeline.Name, job.Queue(), job.Type, job.State)
-
-					res.Counts = res.Counts.addJob(job)
-					res.Pipelines[build.Pipeline.Name] = res.Pipelines[build.Pipeline.Name].addJob(job)
-					res.Queues[job.Queue()] = res.Queues[job.Queue()].addJob(job)
-					buildQueues[job.Queue()]++
-				}
-
-				if len(buildQueues) > 0 {
-					for queue := range buildQueues {
-						log.Printf("Adding stats for build to queue %s", queue)
-						res.Queues[queue] = res.Queues[queue].addBuild(build)
-					}
+			if len(buildQueues) > 0 {
+				for queue := range buildQueues {
+					log.Printf("Adding stats for build to queue %s", queue)
+					res.Queues[queue] = res.Queues[queue].addBuild(build)
 				}
 			}
 		}
+	}
 
-		log.Printf("Extracting cloudwatch metrics from results")
-		metrics := res.extractMetricData()
-
-		for _, chunk := range chunkMetricData(10, metrics) {
-			log.Printf("Submitting chunk of %d metrics to Cloudwatch", len(chunk))
-			if err := putMetricData(svc, chunk); err != nil {
-				return nil, err
-			}
-		}
-
-		return res, nil
-	})
-}
-
-type Config struct {
-	BuildkiteOrgSlug, BuildkiteApiAccessToken string
+	return res, nil
 }
 
 type Counts struct {

@@ -1,13 +1,8 @@
 package: github.com/buildkite/buildkite-cloudwatch-metrics-publisher
 import:
-- package: github.com/buildkite/buildkite-cloudwatch-metrics-publisher/functions/collect-metrics/buildkite
-- package: github.com/apex/go-apex
-  subpackages:
-  - cloudformation
 - package: github.com/aws/aws-sdk-go
   subpackages:
   - aws
   - aws/session
   - service/cloudwatch
-  - service/cloudwatchevents
-  - service/lambda
+- package: github.com/tent/http-link-go
