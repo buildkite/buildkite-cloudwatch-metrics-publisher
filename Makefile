@@ -17,12 +17,18 @@ build/lambda-timer.zip: $(shell find functions/lambda-timer)
 upload: build/cloudwatch-metrics-publisher.json build/lambda-timer.zip build/collect-metrics.zip
 	aws s3 sync --acl public-read build s3://buildkite-cloudwatch-metrics-publisher/
 
-create-stack:build/cloudwatch-metrics-publisher.json
+create-stack: build/cloudwatch-metrics-publisher.json
 	aws cloudformation create-stack \
 	--output text \
-	--stack-name bk-metrics-$(shell date +%Y-%m-%d-%H-%M) \
+	--stack-name buildkite-metrics-$(shell date +%Y-%m-%d-%H-%M) \
 	--disable-rollback \
 	--template-body "file://${PWD}/build/cloudwatch-metrics-publisher.json" \
 	--capabilities CAPABILITY_IAM \
-	--parameters ParameterKey=BuildkiteApiAccessToken,ParameterValue=${BUILDKITE_API_ACCESS_TOKEN} \
-		ParameterKey=BuildkiteOrgSlug,ParameterValue=${BUILDKITE_ORG_SLUG}
+	--parameters ParameterKey=BuildkiteApiAccessToken,ParameterValue=$(token) \
+		ParameterKey=BuildkiteOrgSlug,ParameterValue=$(org) \
+		ParameterKey=KeyName,ParameterValue=$(keyname)
+
+validate: build/cloudwatch-metrics-publisher.json
+	aws cloudformation validate-template \
+	--output table \
+	--template-body "file://${PWD}/build/cloudwatch-metrics-publisher.json"
