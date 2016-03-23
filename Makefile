@@ -8,13 +8,15 @@ build/cloudwatch-metrics-publisher.json: templates/cloudformation.yml
 	-mkdir -p build/
 	cfoo $^ > $@
 
-build/collect-metrics.zip: $(shell find functions/collect-metrics)
-	apex build collect-metrics > build/collect-metrics.zip
+build/buildkite-cloudwatch-metrics:
+	-mkdir -p build/
+	which glide || go get github.com/Masterminds/glide
+	glide install
+	go build -o build/buildkite-cloudwatch-metrics ./cli/buildkite-cloudwatch-metrics/
 
-build/lambda-timer.zip: $(shell find functions/lambda-timer)
-	apex build lambda-timer > build/lambda-timer.zip
+build: build/cloudwatch-metrics-publisher.json build/buildkite-cloudwatch-metrics
 
-upload: build/cloudwatch-metrics-publisher.json build/lambda-timer.zip build/collect-metrics.zip
+upload: build
 	aws s3 sync --acl public-read build s3://buildkite-cloudwatch-metrics-publisher/
 
 create-stack: build/cloudwatch-metrics-publisher.json
