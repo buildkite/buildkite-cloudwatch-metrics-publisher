@@ -1,0 +1,4 @@
+steps:
+  -
+    name: "🔨"
+    command: ".buildkite/tests.sh"
