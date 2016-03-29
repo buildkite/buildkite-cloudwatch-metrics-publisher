@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"log"
+	"regexp"
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
@@ -10,6 +11,12 @@ import (
 	"github.com/aws/aws-sdk-go/service/cloudwatch"
 	"github.com/wolfeidau/go-buildkite/buildkite"
 )
+
+var queuePattern *regexp.Regexp
+
+func init() {
+	queuePattern = regexp.MustCompile(`(?i)^queue=(.+?)$`)
+}
 
 // Generates:
 
@@ -45,24 +52,31 @@ func main() {
 		log.Fatal("Must provide a value for -org")
 	}
 
-	if err := runCollector(*orgSlug, *accessToken, time.Hour*24); err != nil {
+	config, err := buildkite.NewTokenConfig(*accessToken, false)
+	if err != nil {
+		log.Fatalf("client config failed: %s", err)
+	}
+
+	client := buildkite.NewClient(config.Client())
+
+	if err := runCollector(client, *orgSlug, time.Hour*24); err != nil {
 		log.Fatal(err)
 	}
 
 	if *interval > 0 {
 		for _ = range time.NewTicker(*interval).C {
-			if err := runCollector(*orgSlug, *accessToken, time.Hour); err != nil {
+			if err := runCollector(client, *orgSlug, time.Hour); err != nil {
 				log.Println(err)
 			}
 		}
 	}
 }
 
-func runCollector(orgSlug, accessToken string, historical time.Duration) error {
+func runCollector(client *buildkite.Client, orgSlug string, historical time.Duration) error {
 	svc := cloudwatch.New(session.New())
 
 	log.Printf("Collecting buildkite metrics from org %s", orgSlug)
-	result, err := collectMetrics(orgSlug, accessToken, historical)
+	result, err := collectMetrics(client, orgSlug, historical)
 	if err != nil {
 		return err
 	}
@@ -115,6 +129,33 @@ func (c counts) toMetrics(dimensions []*cloudwatch.Dimension) []*cloudwatch.Metr
 	return m
 }
 
+func queue(j *buildkite.Job) string {
+	for _, m := range j.AgentQueryRules {
+		if match := queuePattern.FindStringSubmatch(m); match != nil {
+			return match[1]
+		}
+	}
+	return "default"
+}
+
+func uniqueQueues(builds []buildkite.Build) []string {
+	queueMap := map[string]struct{}{}
+
+	for _, b := range builds {
+		for _, j := range b.Jobs {
+			queueMap[queue(j)] = struct{}{}
+		}
+	}
+
+	queues := []string{}
+
+	for q := range queueMap {
+		queues = append(queues, q)
+	}
+
+	return queues
+}
+
 type result struct {
 	totals            counts
 	queues, pipelines map[string]counts
@@ -139,7 +180,7 @@ func (r *result) toMetrics() []*cloudwatch.MetricDatum {
 	return data
 }
 
-func collectMetrics(orgSlug, accessToken string, historical time.Duration) (*result, error) {
+func collectMetrics(client *buildkite.Client, orgSlug string, historical time.Duration) (*result, error) {
 	totals := newCounts()
 	queues := map[string]counts{}
 	pipelines := map[string]counts{}
@@ -149,30 +190,26 @@ func collectMetrics(orgSlug, accessToken string, historical time.Duration) (*res
 	// Build results with zero values for pipelines/queues
 	// Get all running and scheduled builds, add to results
 
-	builds, err := buildkite.Builds(&buildkite.BuildsInput{
-		OrgSlug:      orgSlug,
-		ApiToken:     accessToken,
+	builds, _, err := client.Builds.ListByOrg(orgSlug, &buildkite.BuildsListOptions{
 		FinishedFrom: time.Now().UTC().Add(historical * -1),
 	})
 	if err != nil {
 		return nil, err
 	}
 
-	for _, queue := range builds.Queues() {
+	for _, queue := range uniqueQueues(builds) {
 		queues[queue] = newCounts()
 	}
 
 	for _, build := range builds {
-		pipelines[build.Pipeline.Name] = newCounts()
+		pipelines[*build.Pipeline.Name] = newCounts()
 	}
 
 	states := []string{"scheduled", "running"}
 
 	for _, state := range states {
-		builds, err := buildkite.Builds(&buildkite.BuildsInput{
-			OrgSlug:  orgSlug,
-			ApiToken: accessToken,
-			State:    state,
+		builds, _, err := client.Builds.ListByOrg(orgSlug, &buildkite.BuildsListOptions{
+			State: state,
 		})
 		if err != nil {
 			return nil, err
@@ -180,49 +217,58 @@ func collectMetrics(orgSlug, accessToken string, historical time.Duration) (*res
 
 		for _, build := range builds {
 			log.Printf("Adding build to stats (id=%q, pipeline=%q, branch=%q, state=%q)",
-				build.ID, build.Pipeline.Name, build.Branch, build.State)
+				*build.ID, *build.Pipeline.Name, *build.Branch, *build.State)
 
-			if _, ok := pipelines[build.Pipeline.Name]; !ok {
-				pipelines[build.Pipeline.Name] = newCounts()
+			if _, ok := pipelines[*build.Pipeline.Name]; !ok {
+				pipelines[*build.Pipeline.Name] = newCounts()
 			}
 
-			switch build.State {
+			switch *build.State {
 			case "running":
 				totals[runningBuildsCount]++
-				pipelines[build.Pipeline.Name][runningBuildsCount]++
+				pipelines[*build.Pipeline.Name][runningBuildsCount]++
 
 			case "scheduled":
 				totals[scheduledBuildsCount]++
-				pipelines[build.Pipeline.Name][scheduledBuildsCount]++
+				pipelines[*build.Pipeline.Name][scheduledBuildsCount]++
 			}
 
 			var buildQueues = map[string]int{}
 
 			for _, job := range build.Jobs {
-				log.Printf("Adding job to stats (id=%q, pipeline=%q, queue=%q, type=%q, state=%q)",
-					job.ID, build.Pipeline.Name, job.Queue(), job.Type, job.State)
-
-				if _, ok := queues[job.Queue()]; !ok {
-					queues[job.Queue()] = newCounts()
+				if job.Type != nil && *job.Type == "waiter" {
+					continue
 				}
 
-				switch job.State {
+				state := ""
+				if job.State != nil {
+					state = *job.State
+				}
+
+				log.Printf("Adding job to stats (id=%q, pipeline=%q, queue=%q, type=%q, state=%q)",
+					*job.ID, *build.Pipeline.Name, queue(job), *job.Type, state)
+
+				if _, ok := queues[queue(job)]; !ok {
+					queues[queue(job)] = newCounts()
+				}
+
+				switch state {
 				case "running":
 					totals[runningJobsCount]++
-					queues[job.Queue()][runningJobsCount]++
+					queues[queue(job)][runningJobsCount]++
 
 				case "scheduled":
 					totals[scheduledJobsCount]++
-					queues[job.Queue()][scheduledJobsCount]++
+					queues[queue(job)][scheduledJobsCount]++
 				}
 
-				buildQueues[job.Queue()]++
+				buildQueues[queue(job)]++
 			}
 
 			// add build metrics to queues
 			if len(buildQueues) > 0 {
 				for queue := range buildQueues {
-					switch build.State {
+					switch *build.State {
 					case "running":
 						queues[queue][runningBuildsCount]++
 
