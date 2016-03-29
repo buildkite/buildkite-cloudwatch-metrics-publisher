@@ -7,5 +7,6 @@ import:
   - service/cloudwatch
 - package: github.com/tent/http-link-go
 - package: github.com/wolfeidau/go-buildkite
+  version: 99designs
   subpackages:
   - buildkite

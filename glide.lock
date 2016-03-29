@@ -1,5 +1,5 @@
-hash: d7232b9e348b696ef4f58ce0bf7375a6993a86fd72e3b3f4880f07a3bff6f7de
-updated: 2016-03-29T12:11:40.393019965+11:00
+hash: 02de9c65ecf668d37b60ae90ebb9acb67f670ad035963af63256be4feeb396d1
+updated: 2016-03-29T15:50:53.737972989+11:00
 imports:
 - name: github.com/aws/aws-sdk-go
   version: f0748927a5d7568334ff0858de06c2812da89d6a
@@ -35,7 +35,7 @@ imports:
 - name: github.com/tent/http-link-go
   version: ac974c61c2f990f4115b119354b5e0b47550e888
 - name: github.com/wolfeidau/go-buildkite
-  version: 83920d3d81efb38658c344320fe3473524c2c38b
+  version: 9987019397f7a2c8b012cf33a599591fd07ef875
   subpackages:
   - buildkite
 devImports: []
