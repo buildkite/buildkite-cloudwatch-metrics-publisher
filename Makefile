@@ -1,7 +1,6 @@
 
 keyname = default
 branch = $(shell git rev-parse --abbrev-ref HEAD)
-binurl = s3://buildkite-cloudwatch-metrics-publisher/master/buildkite-cloudwatch-metrics
 
 build: build/cloudwatch-metrics-publisher.json build/buildkite-cloudwatch-metrics
 
@@ -23,6 +22,14 @@ upload: build
 	aws s3 sync --acl public-read build \
 		s3://buildkite-cloudwatch-metrics-publisher/$(branch)
 
+stackparams = ParameterKey=BuildkiteApiAccessToken,ParameterValue=$(token) \
+		ParameterKey=BuildkiteOrgSlug,ParameterValue=$(org) \
+		ParameterKey=KeyName,ParameterValue=$(keyname)
+
+ifdef binurl
+  stackparams += ParameterKey=BinUrl,ParameterValue=$(binurl)
+endif
+
 create-stack: build/cloudwatch-metrics-publisher.json
 	aws cloudformation create-stack \
 	--output text \
@@ -30,10 +37,7 @@ create-stack: build/cloudwatch-metrics-publisher.json
 	--disable-rollback \
 	--template-body "file://${PWD}/build/cloudwatch-metrics-publisher.json" \
 	--capabilities CAPABILITY_IAM \
-	--parameters ParameterKey=BuildkiteApiAccessToken,ParameterValue=$(token) \
-		ParameterKey=BuildkiteOrgSlug,ParameterValue=$(org) \
-		ParameterKey=KeyName,ParameterValue=$(keyname) \
-		ParameterKey=BinUrl,ParameterValue=$(binurl)
+	--parameters $(stackparams)
 
 validate: build/cloudwatch-metrics-publisher.json
 	aws cloudformation validate-template \
