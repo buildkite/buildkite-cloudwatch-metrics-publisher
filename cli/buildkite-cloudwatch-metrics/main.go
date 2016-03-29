@@ -5,7 +5,6 @@ import (
 	"log"
 	"time"
 
-	"github.com/99designs/go-buildkite/buildkite"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/cloudwatch"
