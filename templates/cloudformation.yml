@@ -52,6 +52,14 @@ Resources:
       AvailabilityZones: !GetAZs
       MinSize: 1
       MaxSize: 1
+      Tags:
+        - Key: Role
+          Value: buildkite-metrics
+          PropagateAtLaunch: true
+
+    CreationPolicy:
+      ResourceSignal:
+        Timeout: PT5M
 
   SecurityGroup:
     Type: AWS::EC2::SecurityGroup
@@ -75,9 +83,9 @@ Resources:
       UserData: !Base64 |
         #!/bin/bash -xve
         export INSTANCE=\$(curl http://169.254.169.254/latest/meta-data/instance-id)
-        aws s3 cp $(BinUrl) /usr/bin/buildkite-cloudwatch-metrics
-        chmod +x /usr/bin/buildkite-cloudwatch-metrics
+        aws s3 cp $(BinUrl) /usr/bin/buildkite-cloudwatch-metrics \
+          && chmod +x /usr/bin/buildkite-cloudwatch-metrics
+        /opt/aws/bin/cfn-signal -e \$? \
+            --stack $(AWS::StackName) --resource 'AutoScalingGroup' --region $(AWS::Region)
         /usr/bin/buildkite-cloudwatch-metrics -org "$(BuildkiteOrgSlug)" -token "$(BuildkiteApiAccessToken)" -interval 30s
         aws autoscaling set-instance-health --instance-id \$INSTANCE --health-status Unhealthy
-
-
