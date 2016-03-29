@@ -12,14 +12,17 @@ import (
 )
 
 // Generates:
+
 // Buildkite > RunningBuildsCount
 // Buildkite > RunningJobsCount
 // Buildkite > ScheduledBuildsCount
 // Buildkite > ScheduledJobsCount
+
 // Buildkite > (Queue) > RunningBuildsCount
 // Buildkite > (Queue) > RunningJobsCount
 // Buildkite > (Queue) > ScheduledBuildsCount
 // Buildkite > (Queue) > ScheduledJobsCount
+
 // Buildkite > (Pipeline) > RunningBuildsCount
 // Buildkite > (Pipeline) > RunningJobsCount
 // Buildkite > (Pipeline) > ScheduledBuildsCount
@@ -59,13 +62,13 @@ func runCollector(orgSlug, accessToken string, historical time.Duration) error {
 	svc := cloudwatch.New(session.New())
 
 	log.Printf("Collecting buildkite metrics from org %s", orgSlug)
-	result, err := collectResults(orgSlug, accessToken, historical)
+	result, err := collectMetrics(orgSlug, accessToken, historical)
 	if err != nil {
 		return err
 	}
 
 	log.Printf("Extracting cloudwatch metrics from results")
-	metrics := result.extractMetricData()
+	metrics := result.toMetrics()
 
 	for _, chunk := range chunkMetricData(10, metrics) {
 		log.Printf("Submitting chunk of %d metrics to Cloudwatch", len(chunk))
@@ -79,11 +82,67 @@ func runCollector(orgSlug, accessToken string, historical time.Duration) error {
 	return nil
 }
 
-func collectResults(orgSlug, accessToken string, historical time.Duration) (*Result, error) {
-	var res *Result = &Result{
-		Queues:    map[string]Counts{},
-		Pipelines: map[string]Counts{},
+const (
+	runningBuildsCount   = "RunningBuildsCount"
+	runningJobsCount     = "RunningJobsCount"
+	scheduledBuildsCount = "ScheduledBuildsCount"
+	scheduledJobsCount   = "ScheduledJobsCount"
+)
+
+type counts map[string]int
+
+func newCounts() counts {
+	return counts{
+		runningBuildsCount:   0,
+		scheduledBuildsCount: 0,
+		runningJobsCount:     0,
+		scheduledJobsCount:   0,
 	}
+}
+
+func (c counts) toMetrics(dimensions []*cloudwatch.Dimension) []*cloudwatch.MetricDatum {
+	m := []*cloudwatch.MetricDatum{}
+
+	for k, v := range c {
+		m = append(m, &cloudwatch.MetricDatum{
+			MetricName: aws.String(k),
+			Dimensions: dimensions,
+			Value:      aws.Float64(float64(v)),
+			Unit:       aws.String("Count"),
+		})
+	}
+
+	return m
+}
+
+type result struct {
+	totals            counts
+	queues, pipelines map[string]counts
+}
+
+func (r *result) toMetrics() []*cloudwatch.MetricDatum {
+	data := []*cloudwatch.MetricDatum{}
+	data = append(data, r.totals.toMetrics(nil)...)
+
+	for name, c := range r.queues {
+		data = append(data, c.toMetrics([]*cloudwatch.Dimension{
+			{Name: aws.String("Queue"), Value: aws.String(name)},
+		})...)
+	}
+
+	for name, c := range r.pipelines {
+		data = append(data, c.toMetrics([]*cloudwatch.Dimension{
+			{Name: aws.String("Pipeline"), Value: aws.String(name)},
+		})...)
+	}
+
+	return data
+}
+
+func collectMetrics(orgSlug, accessToken string, historical time.Duration) (*result, error) {
+	totals := newCounts()
+	queues := map[string]counts{}
+	pipelines := map[string]counts{}
 
 	// Algorithm:
 	// Get Builds with finished_from = 24 hours ago
@@ -96,17 +155,15 @@ func collectResults(orgSlug, accessToken string, historical time.Duration) (*Res
 		FinishedFrom: time.Now().UTC().Add(historical * -1),
 	})
 	if err != nil {
-		return res, err
+		return nil, err
 	}
 
 	for _, queue := range builds.Queues() {
-		res.Queues[queue] = Counts{}
+		queues[queue] = newCounts()
 	}
 
 	for _, build := range builds {
-		if _, ok := res.Pipelines[build.Pipeline.Name]; !ok {
-			res.Pipelines[build.Pipeline.Name] = Counts{}
-		}
+		pipelines[build.Pipeline.Name] = newCounts()
 	}
 
 	states := []string{"scheduled", "running"}
@@ -118,15 +175,26 @@ func collectResults(orgSlug, accessToken string, historical time.Duration) (*Res
 			State:    state,
 		})
 		if err != nil {
-			return res, err
+			return nil, err
 		}
 
 		for _, build := range builds {
 			log.Printf("Adding build to stats (id=%q, pipeline=%q, branch=%q, state=%q)",
 				build.ID, build.Pipeline.Name, build.Branch, build.State)
 
-			res.Counts = res.Counts.addBuild(build)
-			res.Pipelines[build.Pipeline.Name] = res.Pipelines[build.Pipeline.Name].addBuild(build)
+			if _, ok := pipelines[build.Pipeline.Name]; !ok {
+				pipelines[build.Pipeline.Name] = newCounts()
+			}
+
+			switch build.State {
+			case "running":
+				totals[runningBuildsCount]++
+				pipelines[build.Pipeline.Name][runningBuildsCount]++
+
+			case "scheduled":
+				totals[scheduledBuildsCount]++
+				pipelines[build.Pipeline.Name][scheduledBuildsCount]++
+			}
 
 			var buildQueues = map[string]int{}
 
@@ -134,99 +202,39 @@ func collectResults(orgSlug, accessToken string, historical time.Duration) (*Res
 				log.Printf("Adding job to stats (id=%q, pipeline=%q, queue=%q, type=%q, state=%q)",
 					job.ID, build.Pipeline.Name, job.Queue(), job.Type, job.State)
 
-				res.Counts = res.Counts.addJob(job)
-				res.Pipelines[build.Pipeline.Name] = res.Pipelines[build.Pipeline.Name].addJob(job)
-				res.Queues[job.Queue()] = res.Queues[job.Queue()].addJob(job)
+				if _, ok := queues[job.Queue()]; !ok {
+					queues[job.Queue()] = newCounts()
+				}
+
+				switch job.State {
+				case "running":
+					totals[runningJobsCount]++
+					queues[job.Queue()][runningJobsCount]++
+
+				case "scheduled":
+					totals[scheduledJobsCount]++
+					queues[job.Queue()][scheduledJobsCount]++
+				}
+
 				buildQueues[job.Queue()]++
 			}
 
+			// add build metrics to queues
 			if len(buildQueues) > 0 {
 				for queue := range buildQueues {
-					log.Printf("Adding stats for build to queue %s", queue)
-					res.Queues[queue] = res.Queues[queue].addBuild(build)
+					switch build.State {
+					case "running":
+						queues[queue][runningBuildsCount]++
+
+					case "scheduled":
+						queues[queue][scheduledBuildsCount]++
+					}
 				}
 			}
 		}
 	}
 
-	return res, nil
-}
-
-type Counts struct {
-	RunningBuilds, RunningJobs, ScheduledBuilds, ScheduledJobs int
-}
-
-func (c Counts) addBuild(build buildkite.Build) Counts {
-	switch build.State {
-	case "running":
-		c.RunningBuilds++
-	case "scheduled":
-		c.ScheduledBuilds++
-	}
-	return c
-}
-
-func (c Counts) addJob(job buildkite.Job) Counts {
-	switch job.State {
-	case "running":
-		c.RunningJobs++
-	case "scheduled":
-		c.ScheduledJobs++
-	}
-	return c
-}
-
-func (c Counts) asMetrics(dimensions []*cloudwatch.Dimension) []*cloudwatch.MetricDatum {
-	return []*cloudwatch.MetricDatum{
-		&cloudwatch.MetricDatum{
-			MetricName: aws.String("RunningBuildsCount"),
-			Dimensions: dimensions,
-			Value:      aws.Float64(float64(c.RunningBuilds)),
-			Unit:       aws.String("Count"),
-		},
-		&cloudwatch.MetricDatum{
-			MetricName: aws.String("ScheduledBuildsCount"),
-			Dimensions: dimensions,
-			Value:      aws.Float64(float64(c.ScheduledBuilds)),
-			Unit:       aws.String("Count"),
-		},
-		&cloudwatch.MetricDatum{
-			MetricName: aws.String("RunningJobsCount"),
-			Dimensions: dimensions,
-			Value:      aws.Float64(float64(c.RunningJobs)),
-			Unit:       aws.String("Count"),
-		},
-		&cloudwatch.MetricDatum{
-			MetricName: aws.String("ScheduledJobsCount"),
-			Dimensions: dimensions,
-			Value:      aws.Float64(float64(c.ScheduledJobs)),
-			Unit:       aws.String("Count"),
-		},
-	}
-}
-
-type Result struct {
-	Counts
-	Queues, Pipelines map[string]Counts
-}
-
-func (r *Result) extractMetricData() []*cloudwatch.MetricDatum {
-	data := []*cloudwatch.MetricDatum{}
-	data = append(data, r.Counts.asMetrics(nil)...)
-
-	for name, c := range r.Queues {
-		data = append(data, c.asMetrics([]*cloudwatch.Dimension{
-			{Name: aws.String("Queue"), Value: aws.String(name)},
-		})...)
-	}
-
-	for name, c := range r.Pipelines {
-		data = append(data, c.asMetrics([]*cloudwatch.Dimension{
-			{Name: aws.String("Pipeline"), Value: aws.String(name)},
-		})...)
-	}
-
-	return data
+	return &result{totals, queues, pipelines}, nil
 }
 
 func chunkMetricData(size int, data []*cloudwatch.MetricDatum) [][]*cloudwatch.MetricDatum {
