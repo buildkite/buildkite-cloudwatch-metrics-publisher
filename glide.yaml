@@ -6,3 +6,6 @@ import:
   - aws/session
   - service/cloudwatch
 - package: github.com/tent/http-link-go
+- package: gopkg.in/buildkite/go-buildkite.v2
+  subpackages:
+  - buildkite

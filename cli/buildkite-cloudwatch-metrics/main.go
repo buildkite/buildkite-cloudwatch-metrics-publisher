@@ -3,13 +3,20 @@ package main
 import (
 	"flag"
 	"log"
+	"regexp"
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/cloudwatch"
-	"github.com/buildkite/buildkite-cloudwatch-metrics-publisher/buildkite"
+	"gopkg.in/buildkite/go-buildkite.v2/buildkite"
 )
+
+var queuePattern *regexp.Regexp
+
+func init() {
+	queuePattern = regexp.MustCompile(`(?i)^queue=(.+?)$`)
+}
 
 // Generates:
 
@@ -33,6 +40,7 @@ func main() {
 		accessToken = flag.String("token", "", "A Buildkite API Access Token")
 		orgSlug     = flag.String("org", "", "A Buildkite Organization Slug")
 		interval    = flag.Duration("interval", 0, "Update metrics every interval, rather than once")
+		debug       = flag.Bool("debug", false, "Show API debugging output")
 	)
 
 	flag.Parse()
@@ -45,30 +53,43 @@ func main() {
 		log.Fatal("Must provide a value for -org")
 	}
 
-	if err := runCollector(*orgSlug, *accessToken, time.Hour*24); err != nil {
+	config, err := buildkite.NewTokenConfig(*accessToken, false)
+	if err != nil {
+		log.Fatalf("client config failed: %s", err)
+	}
+
+	client := buildkite.NewClient(config.Client())
+	buildkite.SetHttpDebug(*debug)
+
+	if err := runCollector(client, *orgSlug, time.Hour*24); err != nil {
 		log.Fatal(err)
 	}
 
 	if *interval > 0 {
 		for _ = range time.NewTicker(*interval).C {
-			if err := runCollector(*orgSlug, *accessToken, time.Hour); err != nil {
+			if err := runCollector(client, *orgSlug, time.Hour); err != nil {
 				log.Println(err)
 			}
 		}
 	}
 }
 
-func runCollector(orgSlug, accessToken string, historical time.Duration) error {
+func runCollector(client *buildkite.Client, orgSlug string, historical time.Duration) error {
 	svc := cloudwatch.New(session.New())
 
+	res := &result{
+		totals:    newCounts(),
+		queues:    map[string]counts{},
+		pipelines: map[string]counts{},
+	}
+
 	log.Printf("Collecting buildkite metrics from org %s", orgSlug)
-	result, err := collectMetrics(orgSlug, accessToken, historical)
-	if err != nil {
+	if err := res.addBuildAndJobMetrics(client, orgSlug, historical); err != nil {
 		return err
 	}
 
-	log.Printf("Extracting cloudwatch metrics from results")
-	metrics := result.toMetrics()
+	metrics := res.toMetrics()
+	log.Printf("Extracted %d cloudwatch metrics from results", len(metrics))
 
 	for _, chunk := range chunkMetricData(10, metrics) {
 		log.Printf("Submitting chunk of %d metrics to Cloudwatch", len(chunk))
@@ -115,6 +136,33 @@ func (c counts) toMetrics(dimensions []*cloudwatch.Dimension) []*cloudwatch.Metr
 	return m
 }
 
+func queue(j *buildkite.Job) string {
+	for _, m := range j.AgentQueryRules {
+		if match := queuePattern.FindStringSubmatch(m); match != nil {
+			return match[1]
+		}
+	}
+	return "default"
+}
+
+func uniqueQueues(builds []buildkite.Build) []string {
+	queueMap := map[string]struct{}{}
+
+	for _, b := range builds {
+		for _, j := range b.Jobs {
+			queueMap[queue(j)] = struct{}{}
+		}
+	}
+
+	queues := []string{}
+
+	for q := range queueMap {
+		queues = append(queues, q)
+	}
+
+	return queues
+}
+
 type result struct {
 	totals            counts
 	queues, pipelines map[string]counts
@@ -139,102 +187,130 @@ func (r *result) toMetrics() []*cloudwatch.MetricDatum {
 	return data
 }
 
-func collectMetrics(orgSlug, accessToken string, historical time.Duration) (*result, error) {
-	totals := newCounts()
-	queues := map[string]counts{}
-	pipelines := map[string]counts{}
-
+func (r *result) addBuildAndJobMetrics(client *buildkite.Client, orgSlug string, historical time.Duration) error {
 	// Algorithm:
 	// Get Builds with finished_from = 24 hours ago
 	// Build results with zero values for pipelines/queues
 	// Get all running and scheduled builds, add to results
 
-	builds, err := buildkite.Builds(&buildkite.BuildsInput{
-		OrgSlug:      orgSlug,
-		ApiToken:     accessToken,
+	// TODO: page this
+	builds, _, err := client.Builds.ListByOrg(orgSlug, &buildkite.BuildsListOptions{
 		FinishedFrom: time.Now().UTC().Add(historical * -1),
 	})
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	for _, queue := range builds.Queues() {
-		queues[queue] = newCounts()
+	for _, queue := range uniqueQueues(builds) {
+		r.queues[queue] = newCounts()
 	}
 
 	for _, build := range builds {
-		pipelines[build.Pipeline.Name] = newCounts()
+		r.pipelines[*build.Pipeline.Name] = newCounts()
 	}
 
-	states := []string{"scheduled", "running"}
+	p := &pager{
+		lister: func(page int) (interface{}, int, error) {
+			builds, resp, err := client.Builds.ListByOrg(orgSlug, &buildkite.BuildsListOptions{
+				State: []string{"scheduled", "running"},
+				ListOptions: buildkite.ListOptions{
+					Page: page,
+				},
+			})
+			log.Printf("Builds page %d has %d builds, next page is %d",
+				page,
+				len(builds),
+				resp.NextPage,
+			)
+			return builds, resp.NextPage, err
+		},
+	}
 
-	for _, state := range states {
-		builds, err := buildkite.Builds(&buildkite.BuildsInput{
-			OrgSlug:  orgSlug,
-			ApiToken: accessToken,
-			State:    state,
-		})
-		if err != nil {
-			return nil, err
-		}
-
-		for _, build := range builds {
+	return p.Pages(func(v interface{}, lastPage bool) bool {
+		for _, build := range v.([]buildkite.Build) {
 			log.Printf("Adding build to stats (id=%q, pipeline=%q, branch=%q, state=%q)",
-				build.ID, build.Pipeline.Name, build.Branch, build.State)
+				*build.ID, *build.Pipeline.Name, *build.Branch, *build.State)
 
-			if _, ok := pipelines[build.Pipeline.Name]; !ok {
-				pipelines[build.Pipeline.Name] = newCounts()
+			if _, ok := r.pipelines[*build.Pipeline.Name]; !ok {
+				r.pipelines[*build.Pipeline.Name] = newCounts()
 			}
 
-			switch build.State {
+			switch *build.State {
 			case "running":
-				totals[runningBuildsCount]++
-				pipelines[build.Pipeline.Name][runningBuildsCount]++
+				r.totals[runningBuildsCount]++
+				r.pipelines[*build.Pipeline.Name][runningBuildsCount]++
 
 			case "scheduled":
-				totals[scheduledBuildsCount]++
-				pipelines[build.Pipeline.Name][scheduledBuildsCount]++
+				r.totals[scheduledBuildsCount]++
+				r.pipelines[*build.Pipeline.Name][scheduledBuildsCount]++
 			}
 
 			var buildQueues = map[string]int{}
 
 			for _, job := range build.Jobs {
-				log.Printf("Adding job to stats (id=%q, pipeline=%q, queue=%q, type=%q, state=%q)",
-					job.ID, build.Pipeline.Name, job.Queue(), job.Type, job.State)
-
-				if _, ok := queues[job.Queue()]; !ok {
-					queues[job.Queue()] = newCounts()
+				if job.Type != nil && *job.Type == "waiter" {
+					continue
 				}
 
-				switch job.State {
+				state := ""
+				if job.State != nil {
+					state = *job.State
+				}
+
+				log.Printf("Adding job to stats (id=%q, pipeline=%q, queue=%q, type=%q, state=%q)",
+					*job.ID, *build.Pipeline.Name, queue(job), *job.Type, state)
+
+				if _, ok := r.queues[queue(job)]; !ok {
+					r.queues[queue(job)] = newCounts()
+				}
+
+				switch state {
 				case "running":
-					totals[runningJobsCount]++
-					queues[job.Queue()][runningJobsCount]++
+					r.totals[runningJobsCount]++
+					r.queues[queue(job)][runningJobsCount]++
 
 				case "scheduled":
-					totals[scheduledJobsCount]++
-					queues[job.Queue()][scheduledJobsCount]++
+					r.totals[scheduledJobsCount]++
+					r.queues[queue(job)][scheduledJobsCount]++
 				}
 
-				buildQueues[job.Queue()]++
+				buildQueues[queue(job)]++
 			}
 
 			// add build metrics to queues
 			if len(buildQueues) > 0 {
 				for queue := range buildQueues {
-					switch build.State {
+					switch *build.State {
 					case "running":
-						queues[queue][runningBuildsCount]++
+						r.queues[queue][runningBuildsCount]++
 
 					case "scheduled":
-						queues[queue][scheduledBuildsCount]++
+						r.queues[queue][scheduledBuildsCount]++
 					}
 				}
 			}
 		}
-	}
+		return true
+	})
+}
 
-	return &result{totals, queues, pipelines}, nil
+type pager struct {
+	lister func(page int) (v interface{}, nextPage int, err error)
+}
+
+func (p *pager) Pages(f func(v interface{}, lastPage bool) bool) error {
+	page := 1
+	for {
+		val, nextPage, err := p.lister(page)
+		if err != nil {
+			return err
+		}
+		if !f(val, nextPage == 0) || nextPage == 0 {
+			break
+		}
+		page = nextPage
+	}
+	return nil
 }
 
 func chunkMetricData(size int, data []*cloudwatch.MetricDatum) [][]*cloudwatch.MetricDatum {
