@@ -9,7 +9,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/cloudwatch"
-	"github.com/wolfeidau/go-buildkite/buildkite"
+	buildkite "gopkg.in/buildkite/go-buildkite.v2"
 )
 
 var queuePattern *regexp.Regexp
