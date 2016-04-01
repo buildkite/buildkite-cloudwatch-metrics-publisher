@@ -37,6 +37,7 @@ Resources:
               - Effect: Allow
                 Action:
                   - cloudwatch:PutMetricData
+                  - autoscaling:SetInstanceHealth
                 Resource: "*"
 
   InstanceProfile:
@@ -82,7 +83,7 @@ Resources:
       KeyName: $(KeyName)
       UserData: !Base64 |
         #!/bin/bash -x
-        export AWS_DEFAULT_REGION=$(AWS::Region)
+        export AWS_REGION=$(AWS::Region)
         export INSTANCE=\$(curl http://169.254.169.254/latest/meta-data/instance-id)
         curl -Lf $(BinUrl) -o /usr/bin/buildkite-cloudwatch-metrics \
           && chmod +x /usr/bin/buildkite-cloudwatch-metrics
