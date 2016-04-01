@@ -4,6 +4,7 @@ import (
 	"flag"
 	"log"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
@@ -24,11 +25,17 @@ func init() {
 // Buildkite > RunningJobsCount
 // Buildkite > ScheduledBuildsCount
 // Buildkite > ScheduledJobsCount
+// Buildkite > IdleAgentsCount
+// Buildkite > BusyAgentsCount
+// Buildkite > TotalAgentsCount
 
 // Buildkite > (Queue) > RunningBuildsCount
 // Buildkite > (Queue) > RunningJobsCount
 // Buildkite > (Queue) > ScheduledBuildsCount
 // Buildkite > (Queue) > ScheduledJobsCount
+// Buildkite > (Queue) > IdleAgentsCount
+// Buildkite > (Queue) > BusyAgentsCount
+// Buildkite > (Queue) > TotalAgentsCount
 
 // Buildkite > (Pipeline) > RunningBuildsCount
 // Buildkite > (Pipeline) > RunningJobsCount
@@ -88,8 +95,27 @@ func runCollector(client *buildkite.Client, orgSlug string, historical time.Dura
 		return err
 	}
 
+	if err := res.addAgentMetrics(client, orgSlug, historical); err != nil {
+		return err
+	}
+
 	metrics := res.toMetrics()
 	log.Printf("Extracted %d cloudwatch metrics from results", len(metrics))
+
+	for _, metric := range metrics {
+		ds := []string{}
+		for _, d := range metric.Dimensions {
+			ds = append(ds, *d.Name+"="+*d.Value)
+		}
+
+		path := []string{"Buildkite"}
+		if len(ds) > 0 {
+			path = append(path, strings.Join(ds, ","))
+		}
+
+		log.Printf("%s > %s = %.0f",
+			strings.Join(path, " > "), *metric.MetricName, *metric.Value)
+	}
 
 	for _, chunk := range chunkMetricData(10, metrics) {
 		log.Printf("Submitting chunk of %d metrics to Cloudwatch", len(chunk))
@@ -108,6 +134,9 @@ const (
 	runningJobsCount     = "RunningJobsCount"
 	scheduledBuildsCount = "ScheduledBuildsCount"
 	scheduledJobsCount   = "ScheduledJobsCount"
+	totalAgentCount      = "TotalAgentCount"
+	busyAgentCount       = "BusyAgentCount"
+	idleAgentCount       = "IdleAgentCount"
 )
 
 type counts map[string]int
@@ -292,6 +321,69 @@ func (r *result) addBuildAndJobMetrics(client *buildkite.Client, orgSlug string,
 		}
 		return true
 	})
+}
+
+func (r *result) addAgentMetrics(client *buildkite.Client, orgSlug string, historical time.Duration) error {
+	p := &pager{
+		lister: func(page int) (interface{}, int, error) {
+			agents, resp, err := client.Agents.List(orgSlug, &buildkite.AgentListOptions{
+				ListOptions: buildkite.ListOptions{
+					Page: page,
+				},
+			})
+			log.Printf("Agents page %d has %d agents, next page is %d",
+				page,
+				len(agents),
+				resp.NextPage,
+			)
+			return agents, resp.NextPage, err
+		},
+	}
+
+	r.totals[busyAgentCount] = 0
+	r.totals[idleAgentCount] = 0
+	r.totals[totalAgentCount] = 0
+
+	for queue := range r.queues {
+		r.queues[queue][busyAgentCount] = 0
+		r.queues[queue][idleAgentCount] = 0
+		r.queues[queue][totalAgentCount] = 0
+	}
+
+	err := p.Pages(func(v interface{}, lastPage bool) bool {
+		agents := v.([]buildkite.Agent)
+
+		for _, agent := range agents {
+			queue := "default"
+			for _, m := range agent.Metadata {
+				if match := queuePattern.FindStringSubmatch(m); match != nil {
+					queue = match[1]
+					break
+				}
+			}
+
+			log.Printf("Adding agent to stats (name=%q, queue=%q, job=%#v)",
+				*agent.Name, queue, agent.Job != nil)
+
+			if agent.Job != nil {
+				r.totals[busyAgentCount]++
+				r.queues[queue][busyAgentCount]++
+			} else {
+				r.totals[idleAgentCount]++
+				r.queues[queue][idleAgentCount]++
+			}
+
+			r.totals[totalAgentCount]++
+			r.queues[queue][totalAgentCount]++
+		}
+
+		return true
+	})
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 type pager struct {
