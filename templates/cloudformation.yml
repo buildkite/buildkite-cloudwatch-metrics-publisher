@@ -81,7 +81,8 @@ Resources:
       IamInstanceProfile: $(InstanceProfile)
       KeyName: $(KeyName)
       UserData: !Base64 |
-        #!/bin/bash -xve
+        #!/bin/bash -x
+        export AWS_DEFAULT_REGION=$(AWS::Region)
         export INSTANCE=\$(curl http://169.254.169.254/latest/meta-data/instance-id)
         curl -Lf $(BinUrl) -o /usr/bin/buildkite-cloudwatch-metrics \
           && chmod +x /usr/bin/buildkite-cloudwatch-metrics
