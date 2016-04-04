@@ -362,6 +362,12 @@ func (r *result) addAgentMetrics(client *buildkite.Client, orgSlug string, histo
 				}
 			}
 
+			if _, ok := r.queues[queue]; !ok {
+				r.queues[queue][busyAgentCount] = 0
+				r.queues[queue][idleAgentCount] = 0
+				r.queues[queue][totalAgentCount] = 0
+			}
+
 			log.Printf("Adding agent to stats (name=%q, queue=%q, job=%#v)",
 				*agent.Name, queue, agent.Job != nil)
 

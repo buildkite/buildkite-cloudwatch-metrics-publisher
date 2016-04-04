@@ -90,4 +90,4 @@ Resources:
         /opt/aws/bin/cfn-signal -e \$? \
             --stack $(AWS::StackName) --resource 'AutoScalingGroup' --region $(AWS::Region)
         /usr/bin/buildkite-cloudwatch-metrics -org "$(BuildkiteOrgSlug)" -token "$(BuildkiteApiAccessToken)" -interval 30s
-        aws autoscaling set-instance-health --instance-id \$INSTANCE --health-status Unhealthy
+        aws autoscaling set-instance-health --instance-id \$INSTANCE --health-status Unhealthy --region $(AWS::Region)
