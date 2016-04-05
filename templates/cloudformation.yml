@@ -104,7 +104,7 @@ Resources:
               content: |
                 start on startup
                 respawn
-                env AWS_REGION=$(AWS:Region)
+                env AWS_REGION=$(AWS::Region)
                 exec /usr/bin/buildkite-cloudwatch-metrics -org "$(BuildkiteOrgSlug)" -token "$(BuildkiteApiAccessToken)" -interval 30s
           commands:
             01-start-buildkite-cloudwatch-metrics:
