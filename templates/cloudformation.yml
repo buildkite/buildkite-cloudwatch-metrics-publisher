@@ -82,12 +82,29 @@ Resources:
       IamInstanceProfile: $(InstanceProfile)
       KeyName: $(KeyName)
       UserData: !Base64 |
-        #!/bin/bash -x
-        export AWS_REGION=$(AWS::Region)
-        export INSTANCE=\$(curl http://169.254.169.254/latest/meta-data/instance-id)
-        curl -Lf $(BinUrl) -o /usr/bin/buildkite-cloudwatch-metrics \
-          && chmod +x /usr/bin/buildkite-cloudwatch-metrics
-        /opt/aws/bin/cfn-signal -e \$? \
-            --stack $(AWS::StackName) --resource 'AutoScalingGroup' --region $(AWS::Region)
-        /usr/bin/buildkite-cloudwatch-metrics -org "$(BuildkiteOrgSlug)" -token "$(BuildkiteApiAccessToken)" -interval 30s
-        aws autoscaling set-instance-health --instance-id \$INSTANCE --health-status Unhealthy --region $(AWS::Region)
+        #!/bin/bash -xv
+        /opt/aws/bin/cfn-init -s $(AWS::StackId) -r LaunchConfiguration --region $(AWS::Region)
+        /opt/aws/bin/cfn-signal -e \$? -r 'cfn-init finished' \
+          --stack $(AWS::StackName) --resource 'AutoScalingGroup' --region $(AWS::Region)
+
+    Metadata:
+      # see http://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-init.html
+      AWS::CloudFormation::Init:
+        config:
+          files:
+            "/usr/bin/buildkite-cloudwatch-metrics":
+              mode: "000755"
+              owner: root
+              group: root
+              source: $(BinUrl)
+            "/etc/init/buildkite-cloudwatch-metrics.conf":
+              mode: "000644"
+              owner: root
+              group: root
+              content: |
+                start on startup
+                respawn
+                exec /usr/bin/buildkite-cloudwatch-metrics -org "$(BuildkiteOrgSlug)" -token "$(BuildkiteApiAccessToken)" -interval 30s
+          commands:
+            01-start-buildkite-cloudwatch-metrics:
+              command: start buildkite-cloudwatch-metrics
