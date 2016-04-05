@@ -22,14 +22,6 @@ upload: build
 	aws s3 sync --acl public-read build \
 		s3://buildkite-cloudwatch-metrics-publisher/$(branch)
 
-ifndef token
-$(error token is not set)
-endif
-
-ifndef org
-$(error org is not set)
-endif
-
 stackparams = ParameterKey=BuildkiteApiAccessToken,ParameterValue=$(token) \
 		ParameterKey=BuildkiteOrgSlug,ParameterValue=$(org) \
 		ParameterKey=KeyName,ParameterValue=$(keyname)
