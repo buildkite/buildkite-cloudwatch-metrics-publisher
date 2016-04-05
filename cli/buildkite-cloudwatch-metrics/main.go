@@ -345,9 +345,11 @@ func (r *result) addAgentMetrics(client *buildkite.Client, orgSlug string, histo
 	r.totals[totalAgentCount] = 0
 
 	for queue := range r.queues {
-		r.queues[queue][busyAgentCount] = 0
-		r.queues[queue][idleAgentCount] = 0
-		r.queues[queue][totalAgentCount] = 0
+		r.queues[queue] = counts{
+			busyAgentCount:  0,
+			idleAgentCount:  0,
+			totalAgentCount: 0,
+		}
 	}
 
 	err := p.Pages(func(v interface{}, lastPage bool) bool {
@@ -363,9 +365,11 @@ func (r *result) addAgentMetrics(client *buildkite.Client, orgSlug string, histo
 			}
 
 			if _, ok := r.queues[queue]; !ok {
-				r.queues[queue][busyAgentCount] = 0
-				r.queues[queue][idleAgentCount] = 0
-				r.queues[queue][totalAgentCount] = 0
+				r.queues[queue] = counts{
+					busyAgentCount:  0,
+					idleAgentCount:  0,
+					totalAgentCount: 0,
+				}
 			}
 
 			log.Printf("Adding agent to stats (name=%q, queue=%q, job=%#v)",
