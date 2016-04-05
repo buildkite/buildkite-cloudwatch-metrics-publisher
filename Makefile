@@ -1,6 +1,4 @@
 
-keyname = default
-branch = $(shell git rev-parse --abbrev-ref HEAD)
 
 build: build/cloudwatch-metrics-publisher.json build/buildkite-cloudwatch-metrics
 
@@ -12,16 +10,21 @@ build/cloudwatch-metrics-publisher.json: templates/cloudformation.yml
 	cfoo $^ > $@
 	test -s $@
 
+VERSION=$(shell git describe --tags --candidates=1 --dirty --always)
+FLAGS=-X main.Version=$(VERSION)
+
 build/buildkite-cloudwatch-metrics:
 	-mkdir -p build/
 	which glide || go get github.com/Masterminds/glide
 	glide install
-	go build -o build/buildkite-cloudwatch-metrics ./cli/buildkite-cloudwatch-metrics/
+	go build -o build/buildkite-cloudwatch-metrics -ldflags="$(FLAGS)" ./cli/buildkite-cloudwatch-metrics/
 
 upload: build
 	aws s3 sync --acl public-read build \
 		s3://buildkite-cloudwatch-metrics-publisher/$(branch)
 
+keyname = default
+branch = $(shell git rev-parse --abbrev-ref HEAD)
 stackparams = ParameterKey=BuildkiteApiAccessToken,ParameterValue=$(token) \
 		ParameterKey=BuildkiteOrgSlug,ParameterValue=$(org) \
 		ParameterKey=KeyName,ParameterValue=$(keyname)

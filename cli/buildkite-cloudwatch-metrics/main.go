@@ -2,7 +2,9 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"log"
+	"os"
 	"regexp"
 	"strings"
 	"time"
@@ -12,6 +14,9 @@ import (
 	"github.com/aws/aws-sdk-go/service/cloudwatch"
 	"gopkg.in/buildkite/go-buildkite.v2/buildkite"
 )
+
+// Version is passed in via ldflags
+var Version string
 
 var queuePattern *regexp.Regexp
 
@@ -48,9 +53,15 @@ func main() {
 		orgSlug     = flag.String("org", "", "A Buildkite Organization Slug")
 		interval    = flag.Duration("interval", 0, "Update metrics every interval, rather than once")
 		debug       = flag.Bool("debug", false, "Show API debugging output")
+		version     = flag.Bool("version", false, "Show the version")
 	)
 
 	flag.Parse()
+
+	if *version {
+		fmt.Printf("buildkite-cloudwatch-metrics %s", Version)
+		os.Exit(0)
+	}
 
 	if *accessToken == "" {
 		log.Fatal("Must provide a value for -token")
