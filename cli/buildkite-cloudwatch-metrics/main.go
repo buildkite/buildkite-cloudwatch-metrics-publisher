@@ -187,7 +187,6 @@ func queue(j *buildkite.Job) string {
 
 func uniqueQueues(builds []buildkite.Build) []string {
 	queueMap := map[string]struct{}{}
-
 	for _, b := range builds {
 		for _, j := range b.Jobs {
 			queueMap[queue(j)] = struct{}{}
@@ -195,7 +194,6 @@ func uniqueQueues(builds []buildkite.Build) []string {
 	}
 
 	queues := []string{}
-
 	for q := range queueMap {
 		queues = append(queues, q)
 	}
@@ -233,40 +231,30 @@ func (r *result) addBuildAndJobMetrics(client *buildkite.Client, orgSlug string,
 	// Build results with zero values for pipelines/queues
 	// Get all running and scheduled builds, add to results
 
-	// TODO: page this
-	builds, _, err := client.Builds.ListByOrg(orgSlug, &buildkite.BuildsListOptions{
+	finishedBuilds := listBuildsByOrg(client.Builds, orgSlug, buildkite.BuildsListOptions{
 		FinishedFrom: time.Now().UTC().Add(historical * -1),
+	})
+
+	err := finishedBuilds.Pages(func(v interface{}, lastPage bool) bool {
+		for _, queue := range uniqueQueues(v.([]buildkite.Build)) {
+			if _, ok := r.queues[queue]; !ok {
+				r.queues[queue] = newCounts()
+			}
+		}
+		for _, build := range v.([]buildkite.Build) {
+			r.pipelines[*build.Pipeline.Name] = newCounts()
+		}
+		return true
 	})
 	if err != nil {
 		return err
 	}
 
-	for _, queue := range uniqueQueues(builds) {
-		r.queues[queue] = newCounts()
-	}
+	currentBuilds := listBuildsByOrg(client.Builds, orgSlug, buildkite.BuildsListOptions{
+		State: []string{"scheduled", "running"},
+	})
 
-	for _, build := range builds {
-		r.pipelines[*build.Pipeline.Name] = newCounts()
-	}
-
-	p := &pager{
-		lister: func(page int) (interface{}, int, error) {
-			builds, resp, err := client.Builds.ListByOrg(orgSlug, &buildkite.BuildsListOptions{
-				State: []string{"scheduled", "running"},
-				ListOptions: buildkite.ListOptions{
-					Page: page,
-				},
-			})
-			log.Printf("Builds page %d has %d builds, next page is %d",
-				page,
-				len(builds),
-				resp.NextPage,
-			)
-			return builds, resp.NextPage, err
-		},
-	}
-
-	return p.Pages(func(v interface{}, lastPage bool) bool {
+	return currentBuilds.Pages(func(v interface{}, lastPage bool) bool {
 		for _, build := range v.([]buildkite.Build) {
 			log.Printf("Adding build to stats (id=%q, pipeline=%q, branch=%q, state=%q)",
 				*build.ID, *build.Pipeline.Name, *build.Branch, *build.State)
@@ -356,11 +344,9 @@ func (r *result) addAgentMetrics(client *buildkite.Client, orgSlug string, histo
 	r.totals[totalAgentCount] = 0
 
 	for queue := range r.queues {
-		r.queues[queue] = counts{
-			busyAgentCount:  0,
-			idleAgentCount:  0,
-			totalAgentCount: 0,
-		}
+		r.queues[queue][busyAgentCount] = 0
+		r.queues[queue][idleAgentCount] = 0
+		r.queues[queue][totalAgentCount] = 0
 	}
 
 	err := p.Pages(func(v interface{}, lastPage bool) bool {
@@ -376,11 +362,10 @@ func (r *result) addAgentMetrics(client *buildkite.Client, orgSlug string, histo
 			}
 
 			if _, ok := r.queues[queue]; !ok {
-				r.queues[queue] = counts{
-					busyAgentCount:  0,
-					idleAgentCount:  0,
-					totalAgentCount: 0,
-				}
+				r.queues[queue] = newCounts()
+				r.queues[queue][busyAgentCount] = 0
+				r.queues[queue][idleAgentCount] = 0
+				r.queues[queue][totalAgentCount] = 0
 			}
 
 			log.Printf("Adding agent to stats (name=%q, queue=%q, job=%#v)",
@@ -424,6 +409,19 @@ func (p *pager) Pages(f func(v interface{}, lastPage bool) bool) error {
 		page = nextPage
 	}
 	return nil
+}
+
+func listBuildsByOrg(builds *buildkite.BuildsService, orgSlug string, opts buildkite.BuildsListOptions) *pager {
+	return &pager{
+		lister: func(page int) (interface{}, int, error) {
+			opts.ListOptions = buildkite.ListOptions{
+				Page: page,
+			}
+			builds, resp, err := builds.ListByOrg(orgSlug, &opts)
+			log.Printf("Builds page %d has %d builds, next page is %d", page, len(builds), resp.NextPage)
+			return builds, resp.NextPage, err
+		},
+	}
 }
 
 func chunkMetricData(size int, data []*cloudwatch.MetricDatum) [][]*cloudwatch.MetricDatum {
