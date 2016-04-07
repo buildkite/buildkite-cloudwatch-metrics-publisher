@@ -1,6 +1,6 @@
 
 
-build: build/cloudwatch-metrics-publisher.json build/buildkite-cloudwatch-metrics
+build: build/cloudwatch-metrics-publisher.json
 
 clean:
 	-rm build/*
@@ -9,15 +9,6 @@ build/cloudwatch-metrics-publisher.json: templates/cloudformation.yml
 	-mkdir -p build/
 	cfoo $^ > $@
 	test -s $@
-
-VERSION=$(shell git describe --tags --candidates=1 --dirty --always)
-FLAGS=-X main.Version=$(VERSION)
-
-build/buildkite-cloudwatch-metrics:
-	-mkdir -p build/
-	which glide || go get github.com/Masterminds/glide
-	glide install
-	go build -o build/buildkite-cloudwatch-metrics -ldflags="$(FLAGS)" ./cli/buildkite-cloudwatch-metrics/
 
 upload: build
 	aws s3 sync --acl public-read build \
