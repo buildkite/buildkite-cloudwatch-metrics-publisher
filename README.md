@@ -2,7 +2,7 @@
 
 [![Launch BK Cloudwatch Metrics Publisher](http://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/images/cloudformation-launch-stack-button.png)](https://console.aws.amazon.com/cloudformation/home?region=us-east-1#/stacks/new?stackName=buildkite-cloudwatch-metrics-publisher&templateURL=https://s3.amazonaws.com/buildkite-cloudwatch-metrics-publisher/master/cloudwatch-metrics-publisher.json)
 
-Publish [Buildkite](https://buildkite.com/) job queue statistics to [AWS Cloudwatch](http://aws.amazon.com/cloudwatch/) for easy EC2 auto-scaling of your build agents.
+A cloudformation stack that runs [buildkite-metrics](https://github.com/buildkite/buildkite-metrics) every 30 seconds and publishes the results to CloudWatch metrics.
 
 ## Installing
 
@@ -44,16 +44,6 @@ Buildkite > (Pipeline) > RunningBuildsCount
 Buildkite > (Pipeline) > RunningJobsCount
 Buildkite > (Pipeline) > ScheduledBuildsCount
 Buildkite > (Pipeline) > ScheduledJobsCount
-```
-
-## Developing
-
-[![Build status](https://badge.buildkite.com/80d04fcde3a306bef44e77aadb1f1ffdc20ebb3c8f1f585a60.svg)](https://buildkite.com/buildkite-aws-stack/buildkite-cloudwatch-metrics-publisher)
-
-You can build and run the binary tool locally with golang installed:
-
-```
-go run cli/buildkite-cloudwatch-metrics/*.go -org [myorg] -token [mytoken]
 ```
 
 ## License

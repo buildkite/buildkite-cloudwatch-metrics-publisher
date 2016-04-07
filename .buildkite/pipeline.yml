@@ -1,6 +1,6 @@
 steps:
   -
-    name: "Build binary"
+    name: "Build :cloudformation: templates"
     command: "make clean build"
     artifact_paths: "build/*"
     agents:
@@ -11,7 +11,7 @@ steps:
   - wait
 
   -
-    name: "Upload build files"
+    name: "Upload :cloudformation: templates"
     command: ".buildkite/upload.sh"
     agents:
       queue: aws-stack

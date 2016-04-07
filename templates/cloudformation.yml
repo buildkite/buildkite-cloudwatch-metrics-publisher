@@ -17,7 +17,7 @@ Parameters:
   BinUrl:
     Description: The url to download the binary from
     Type: String
-    Default: https://s3.amazonaws.com/buildkite-cloudwatch-metrics-publisher/master/buildkite-cloudwatch-metrics
+    Default: https://s3.amazonaws.com/buildkite-metrics/buildkite-metrics-Linux-x86_64
 
 Resources:
   IAMRole:
