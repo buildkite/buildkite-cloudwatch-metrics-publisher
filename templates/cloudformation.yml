@@ -17,7 +17,19 @@ Parameters:
   BinUrl:
     Description: The url to download the binary from
     Type: String
-    Default: https://s3.amazonaws.com/buildkite-metrics/buildkite-metrics-Linux-x86_64
+    Default: https://s3.amazonaws.com/buildkite-metrics/buildkite-metrics-Linux-x86_64-v1.0.0-5-ge73a533
+
+  QueueName:
+    Description: An optional queuename to filter published metrics to
+    Type: String
+    Default: ""
+
+  PollInterval:
+    Description: How often to update metrics
+    Type: String
+    Default: "30s"
+
+
 
 Resources:
   IAMRole:
@@ -111,7 +123,10 @@ Resources:
                     exec >/tmp/buildkite-cloudwatch-metrics-log-fifo
                     exec 2>&1
                     rm /tmp/buildkite-cloudwatch-metrics-log-fifo
-                    exec /usr/bin/buildkite-cloudwatch-metrics -org "$(BuildkiteOrgSlug)" -token "$(BuildkiteApiAccessToken)" -interval 30s
+                    exec /usr/bin/buildkite-cloudwatch-metrics \
+                        -org "$(BuildkiteOrgSlug)" -token "$(BuildkiteApiAccessToken)" \
+                        -interval $(PollInterval) \
+                        -queue "$(QueueName)"
                 end script
 
           commands:
