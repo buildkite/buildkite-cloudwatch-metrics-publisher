@@ -29,7 +29,9 @@ Parameters:
     Type: String
     Default: "30s"
 
-
+  Subnets:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: The VPC Subnets that the instance will run in
 
 Resources:
   IAMRole:
@@ -62,7 +64,7 @@ Resources:
     Type: AWS::AutoScaling::AutoScalingGroup
     Properties:
       LaunchConfigurationName: $(LaunchConfiguration)
-      AvailabilityZones: !GetAZs
+      VPCZoneIdentifier: $(Subnets)
       MinSize: 1
       MaxSize: 1
       Tags:

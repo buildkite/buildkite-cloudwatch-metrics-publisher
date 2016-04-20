@@ -18,7 +18,8 @@ aws cloudformation create-stack \
 	--template-body "https://s3.amazonaws.com/buildkite-cloudwatch-metrics-publisher/master/cloudwatch-metrics-publisher.json" \
 	--capabilities CAPABILITY_IAM \
 	--parameters ParameterKey=BuildkiteApiAccessToken,ParameterValue=BUILDKITE_API_TOKEN_GOES_HERE \
-	ParameterKey=BuildkiteOrgSlug,ParameterValue=BUILDKITE_ORG_SLUG_GOES_HERE
+	ParameterKey=BuildkiteOrgSlug,ParameterValue=BUILDKITE_ORG_SLUG_GOES_HERE \
+	ParameterKey=Subnets,ParameterValue=VPC_SUBNETS_GO_HERE
 ```
 
 After the stack is run you will have the following metrics populated in CloudWatch (updated every 5 minutes):
