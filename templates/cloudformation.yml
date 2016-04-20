@@ -29,9 +29,13 @@ Parameters:
     Type: String
     Default: "30s"
 
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: The VPC to run in
+
   Subnets:
     Type: List<AWS::EC2::Subnet::Id>
-    Description: The VPC Subnets that the instance will run in
+    Description: The Subnets for the VPC specified in VpcId
 
 Resources:
   IAMRole:
@@ -79,7 +83,8 @@ Resources:
   SecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupDescription: VPC/EC2 Security Group
+      GroupDescription: Enable access to SSH
+      VpcId: $(VpcId)
       SecurityGroupIngress:
         - IpProtocol: tcp
           FromPort: 22
