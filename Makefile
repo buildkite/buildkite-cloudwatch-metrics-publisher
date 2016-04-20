@@ -19,7 +19,8 @@ branch = $(shell git rev-parse --abbrev-ref HEAD)
 stackparams = ParameterKey=BuildkiteApiAccessToken,ParameterValue=$(token) \
 		ParameterKey=BuildkiteOrgSlug,ParameterValue=$(org) \
 		ParameterKey=KeyName,ParameterValue=$(keyname) \
-		ParameterKey=Subnets,ParameterValue=$(subnets) \
+		ParameterKey=VpcId,ParameterValue=$(vpc) \
+		ParameterKey=Subnets,ParameterValue=$(subnets)
 
 ifdef binurl
   stackparams += ParameterKey=BinUrl,ParameterValue=$(binurl)
