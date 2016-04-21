@@ -78,7 +78,7 @@ Resources:
 
     CreationPolicy:
       ResourceSignal:
-        Timeout: PT5M
+        Timeout: PT10M
 
   SecurityGroup:
     Type: AWS::EC2::SecurityGroup
@@ -94,6 +94,7 @@ Resources:
   LaunchConfiguration:
     Type: AWS::AutoScaling::LaunchConfiguration
     Properties:
+      AssociatePublicIpAddress: true
       InstanceMonitoring: true
       SecurityGroups: [ $(SecurityGroup) ]
       ImageId: ami-8fcee4e5
