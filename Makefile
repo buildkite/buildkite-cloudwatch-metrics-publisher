@@ -20,7 +20,8 @@ stackparams = ParameterKey=BuildkiteApiAccessToken,ParameterValue=$(token) \
 		ParameterKey=BuildkiteOrgSlug,ParameterValue=$(org) \
 		ParameterKey=KeyName,ParameterValue=$(keyname) \
 		ParameterKey=VpcId,ParameterValue=$(vpc) \
-		ParameterKey=Subnets,ParameterValue=$(subnets)
+		ParameterKey=Subnets,ParameterValue=$(subnets) \
+		ParameterKey=QueueName,ParameterValue=$(queue)
 
 ifdef binurl
   stackparams += ParameterKey=BinUrl,ParameterValue=$(binurl)
