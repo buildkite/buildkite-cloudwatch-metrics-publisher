@@ -116,7 +116,7 @@ Resources:
       AssociatePublicIpAddress: true
       InstanceMonitoring: true
       SecurityGroups: [ $(SecurityGroup) ]
-      ImageId: AMIRegionMap[$(AWS::Region)][AMI]
+      ImageId: AWSRegion2AMI[$(AWS::Region)][AMI]
       InstanceType: t2.nano
       IamInstanceProfile: $(InstanceProfile)
       KeyName: $(KeyName)
