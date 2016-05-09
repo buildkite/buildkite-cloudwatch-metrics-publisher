@@ -97,7 +97,7 @@ Resources:
 
     UpdatePolicy:
       AutoScalingRollingUpdate:
-        MinInstancesInService: 1
+        MinInstancesInService: 0
         WaitOnResourceSignals: true
 
   SecurityGroup:
