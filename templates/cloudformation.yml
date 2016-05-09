@@ -80,6 +80,11 @@ Resources:
       ResourceSignal:
         Timeout: PT10M
 
+    UpdatePolicy:
+      AutoScalingRollingUpdate:
+        MinInstancesInService: 1
+        WaitOnResourceSignals: true
+
   SecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
