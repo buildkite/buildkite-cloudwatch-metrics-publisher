@@ -6,7 +6,7 @@ A cloudformation stack that runs [buildkite-metrics](https://github.com/buildkit
 
 ## Installing
 
-The easiest way to install is to press the above button and then enter your org slug and your [Buildkite API Access Token](https://buildkite.com/user/api-access-tokens) with the `read_pipelines` scope enabled.
+The easiest way to install is to press the above button and then enter your org slug and your [Buildkite API Access Token](https://buildkite.com/user/api-access-tokens) (with the `read_pipelines`, `read_builds`, `read_agents` scopes enabled).
 
 Alternately, run via the command-line:
 
