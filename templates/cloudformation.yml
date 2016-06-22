@@ -32,7 +32,7 @@ Parameters:
   BinUrl:
     Description: The url to download the binary from
     Type: String
-    Default: https://s3.amazonaws.com/buildkite-metrics/buildkite-metrics-Linux-x86_64-v1.0.0-5-ge73a533
+    Default: https://s3.amazonaws.com/buildkite-metrics/buildkite-metrics-Linux-x86_64-v1.2.0-1-g027ad50
 
   QueueName:
     Description: An optional queuename to filter published metrics to
