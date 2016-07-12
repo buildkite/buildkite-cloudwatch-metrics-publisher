@@ -42,7 +42,7 @@ Parameters:
   PollInterval:
     Description: How often to update metrics
     Type: String
-    Default: "30s"
+    Default: "15s"
 
   VpcId:
     Type: AWS::EC2::VPC::Id
