@@ -1,18 +1,18 @@
 
 Mappings:
 
-  # Amazon Linux AMI 2016.03.1 was released on 2016-05-04.
+  # Amazon Linux AMI 2016.03.3 was released on 2016-06-28.
   # HVM EBS-Backed 64-bit instances from https://aws.amazon.com/amazon-linux-ami/
   AWSRegion2AMI:
-    us-east-1:      { AMI: ami-f5f41398 }  # US East (N. Virginia)
-    us-west-2:      { AMI: ami-d0f506b0 }  # US West (Oregon)
-    us-west-1:      { AMI: ami-6e84fa0e }  # US West (N. California)
-    eu-west-1:      { AMI: ami-b0ac25c3 }  # EU (Ireland)
-    eu-central-2:   { AMI: ami-d3c022bc }  # EU (Frankfurt)
-    ap-southeast-1: { AMI: ami-1ddc0b7e }  # Asia Pacific (Singapore)
-    ap-northeast-1: { AMI: ami-29160d47 }  # Asia Pacific (Tokyo)
-    ap-southeast-2: { AMI: ami-0c95b86f }  # Asia Pacific (Sydney)
-    sa-east-1:      { AMI: ami-fb890097 }  # South America (São Paulo)
+    us-east-1:      { AMI: ami-6869aa05 }  # US East (N. Virginia)
+    us-west-2:      { AMI: ami-7172b611 }  # US West (Oregon)
+    us-west-1:      { AMI: ami-31490d51 }  # US West (N. California)
+    eu-west-1:      { AMI: ami-f9dd458a }  # EU (Ireland)
+    eu-central-2:   { AMI: ami-ea26ce85 }  # EU (Frankfurt)
+    ap-southeast-1: { AMI: ami-a59b49c6 }  # Asia Pacific (Singapore)
+    ap-northeast-1: { AMI: ami-374db956 }  # Asia Pacific (Tokyo)
+    ap-southeast-2: { AMI: ami-dc361ebf }  # Asia Pacific (Sydney)
+    sa-east-1:      { AMI: ami-6dd04501 }  # South America (São Paulo)
 
 Parameters:
   BuildkiteApiAccessToken:
