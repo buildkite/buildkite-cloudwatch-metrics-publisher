@@ -126,6 +126,10 @@ Resources:
         /opt/aws/bin/cfn-init -s $(AWS::StackId) -r LaunchConfiguration --region $(AWS::Region)
         /opt/aws/bin/cfn-signal -e \$? -r 'cfn-init finished' \
           --stack $(AWS::StackName) --resource 'AutoScalingGroup' --region $(AWS::Region)
+        # Here we put any params we want to trigger a restart
+        # $(BuildkiteApiAccessToken)
+        # $(BuildkiteOrgSlug)
+        # $(PollInterval)
 
     Metadata:
       # see http://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-init.html
