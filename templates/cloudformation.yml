@@ -148,7 +148,7 @@ Resources:
               group: root
               content: |
                 start on startup
-                respawn
+                respawn limit unlimited
                 env AWS_REGION=$(AWS::Region)
                 script
                     mkfifo /tmp/buildkite-cloudwatch-metrics-log-fifo
