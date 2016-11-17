@@ -9,7 +9,7 @@ Mappings:
     us-west-2:      { AMI: ami-5ec1673e }  # US West (Oregon)
     us-west-1:      { AMI: ami-23e8a343 }  # US West (N. California)
     eu-west-1:      { AMI: ami-9398d3e0 }  # EU (Ireland)
-    eu-central-2:   { AMI: ami-f9619996 }  # EU (Frankfurt)
+    eu-central-1:   { AMI: ami-f9619996 }  # EU (Frankfurt)
     ap-southeast-1: { AMI: ami-b953f2da }  # Asia Pacific (Singapore)
     ap-northeast-2: { AMI: ami-983ce8f6 }  # Asia Pacific (Seoul)
     ap-northeast-1: { AMI: ami-0c11b26d }  # Asia Pacific (Tokyo)
