@@ -1,6 +1,6 @@
-VERSION=$(shell git describe --tags --candidates=1)
+version=$(shell git describe --tags --candidates=1)
 
-build: build/cloudwatch-metrics-publisher.json
+build: build/cloudwatch-metrics-publisher.json build/cloudwatch-metrics-publisher-$(version).json
 
 clean:
 	-rm build/*
@@ -10,9 +10,10 @@ build/cloudwatch-metrics-publisher.json: templates/cloudformation.yml
 	cfoo $^ > $@
 	test -s $@
 
+build/cloudwatch-metrics-publisher-$(version).json: build/cloudwatch-metrics-publisher.json
+	cp build/cloudwatch-metrics-publisher.json build/cloudwatch-metrics-publisher-$(version).json
+
 upload: build
-	aws s3 sync --acl public-read build \
-		s3://buildkite-cloudwatch-metrics-publisher/$(VERSION)
 	aws s3 sync --acl public-read build \
 		s3://buildkite-cloudwatch-metrics-publisher/$(branch)
 
