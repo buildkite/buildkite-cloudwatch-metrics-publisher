@@ -1,4 +1,4 @@
-
+VERSION=$(shell git describe --tags --candidates=1)
 
 build: build/cloudwatch-metrics-publisher.json
 
@@ -11,6 +11,8 @@ build/cloudwatch-metrics-publisher.json: templates/cloudformation.yml
 	test -s $@
 
 upload: build
+	aws s3 sync --acl public-read build \
+		s3://buildkite-cloudwatch-metrics-publisher/$(VERSION)
 	aws s3 sync --acl public-read build \
 		s3://buildkite-cloudwatch-metrics-publisher/$(branch)
 
