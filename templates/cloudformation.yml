@@ -1,21 +1,6 @@
-
-Mappings:
-
-  # Amazon Linux AMI 2016.09.0 was released on 2016-09-27.
-  # HVM EBS-Backed 64-bit instances from https://aws.amazon.com/amazon-linux-ami/
-  AWSRegion2AMI:
-    us-east-1:      { AMI: ami-b73b63a0 }  # US East (N. Virginia)
-    us-east-2:      { AMI: ami-58277d3d }  # US East (Ohio)
-    us-west-2:      { AMI: ami-5ec1673e }  # US West (Oregon)
-    us-west-1:      { AMI: ami-23e8a343 }  # US West (N. California)
-    eu-west-1:      { AMI: ami-9398d3e0 }  # EU (Ireland)
-    eu-central-1:   { AMI: ami-f9619996 }  # EU (Frankfurt)
-    ap-southeast-1: { AMI: ami-b953f2da }  # Asia Pacific (Singapore)
-    ap-northeast-2: { AMI: ami-983ce8f6 }  # Asia Pacific (Seoul)
-    ap-northeast-1: { AMI: ami-0c11b26d }  # Asia Pacific (Tokyo)
-    ap-southeast-2: { AMI: ami-db704cb8 }  # Asia Pacific (Sydney)
-    ap-south-1:     { AMI: ami-34b4c05b }  # Asia Pacific (Mumbai)
-    sa-east-1:      { AMI: ami-97831ffb }  # South America (São Paulo)
+---
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Publish Buildkite Metrics to Cloudwatch
 
 Parameters:
   BuildkiteApiAccessToken:
@@ -27,145 +12,91 @@ Parameters:
     Description: Your Buildkite organization slug
     Type: String
 
-  KeyName:
-    Description: The ssh keypair used for the instance
-    Type: AWS::EC2::KeyPair::KeyName
-    Default: default
-
-  BinUrl:
-    Description: The url to download the binary from
-    Type: String
-    Default: https://s3.amazonaws.com/buildkite-metrics/buildkite-metrics-Linux-x86_64-v1.2.0-1-g027ad50
-
   QueueName:
     Description: An optional queuename to filter published metrics to
     Type: String
     Default: ""
 
-  PollInterval:
+  PollRate:
     Description: How often to update metrics
     Type: String
-    Default: "15s"
-
-  VpcId:
-    Type: AWS::EC2::VPC::Id
-    Description: The VPC to run in
-
-  Subnets:
-    Type: List<AWS::EC2::Subnet::Id>
-    Description: The Subnets for the VPC specified in VpcId
+    Default: "1 minute"
 
 Resources:
-  IAMRole:
+  LambdaExecutionRole:
     Type: AWS::IAM::Role
     Properties:
       AssumeRolePolicyDocument:
+        Version: '2012-10-17'
         Statement:
-          - Effect: Allow
-            Principal:
-              Service: [ ec2.amazonaws.com ]
-            Action: sts:AssumeRole
+        - Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+          - sts:AssumeRole
       Path: "/"
-      Policies:
-        - PolicyName: root
-          PolicyDocument:
-            Statement:
-              - Effect: Allow
-                Action:
-                  - cloudwatch:PutMetricData
-                  - autoscaling:SetInstanceHealth
-                Resource: "*"
 
-  InstanceProfile:
-    Type: AWS::IAM::InstanceProfile
+  LambdaExecutionPolicy:
+    DependsOn: LambdaExecutionRole
+    Type: AWS::IAM::Policy
     Properties:
-      Path: /
-      Roles: [ $(IAMRole) ]
+      PolicyName: AccessToCloudwatchForBuildkiteMetrics
+      Roles:
+      - $(LambdaExecutionRole)
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Action:
+          - cloudwatch:PutMetricData
+          - autoscaling:SetInstanceHealth
+          Resource:
+          - "*"
 
-  AutoScalingGroup:
-    Type: AWS::AutoScaling::AutoScalingGroup
+  BuildkiteMetricsFunction:
+    Type: AWS::Lambda::Function
+    DependsOn:
+    - LambdaExecutionRole
+    - LambdaExecutionPolicy
     Properties:
-      LaunchConfigurationName: $(LaunchConfiguration)
-      VPCZoneIdentifier: $(Subnets)
-      MinSize: 1
-      MaxSize: 1
-      Tags:
-        - Key: Role
-          Value: buildkite-metrics
-          PropagateAtLaunch: true
+      Code:
+        S3Bucket: buildkite-metrics
+        S3Key: buildkite-metrics-v1.2.0-29-gc4d48c4-lambda.zip
+      Role:
+        Fn::GetAtt:
+        - LambdaExecutionRole
+        - Arn
+      Timeout: 60
+      Handler: handler.handle
+      Runtime: python2.7
+      MemorySize: 128
+      Environment:
+        Variables:
+          BUILDKITE_TOKEN: $(BuildkiteApiAccessToken)
+          BUILDKITE_ORG: $(BuildkiteOrgSlug)
+          BUILDKITE_QUEUE: $(QueueName)
 
-    CreationPolicy:
-      ResourceSignal:
-        Timeout: PT10M
-
-    UpdatePolicy:
-      AutoScalingRollingUpdate:
-        MinInstancesInService: 0
-        WaitOnResourceSignals: true
-
-  SecurityGroup:
-    Type: AWS::EC2::SecurityGroup
+  ScheduledRule:
+    Type: "AWS::Events::Rule"
     Properties:
-      GroupDescription: Enable access to SSH
-      VpcId: $(VpcId)
-      SecurityGroupIngress:
-        - IpProtocol: tcp
-          FromPort: 22
-          ToPort: 22
-          CidrIp: 0.0.0.0/0
+      Description: "ScheduledRule"
+      ScheduleExpression: !Join [ "", [ "rate(", $(PollRate), ")" ] ]
+      State: "ENABLED"
+      Targets:
+        - Arn:
+            Fn::GetAtt:
+              - "BuildkiteMetricsFunction"
+              - "Arn"
+          Id: "TargetBuildkiteMetricsFunction"
 
-  LaunchConfiguration:
-    Type: AWS::AutoScaling::LaunchConfiguration
+  PermissionForEventsToInvokeLambda:
+    Type: "AWS::Lambda::Permission"
     Properties:
-      AssociatePublicIpAddress: true
-      InstanceMonitoring: true
-      SecurityGroups: [ $(SecurityGroup) ]
-      ImageId: $(AWSRegion2AMI[$(AWS::Region)][AMI])
-      InstanceType: t2.nano
-      IamInstanceProfile: $(InstanceProfile)
-      KeyName: $(KeyName)
-      UserData: !Base64 |
-        #!/bin/bash -xv
-        /opt/aws/bin/cfn-init -s $(AWS::StackId) -r LaunchConfiguration --region $(AWS::Region)
-        /opt/aws/bin/cfn-signal -e \$? -r 'cfn-init finished' \
-          --stack $(AWS::StackName) --resource 'AutoScalingGroup' --region $(AWS::Region)
-        # Here we put any params we want to trigger a restart
-        # $(BuildkiteApiAccessToken)
-        # $(BuildkiteOrgSlug)
-        # $(PollInterval)
-        # $(BinUrl)
-
-    Metadata:
-      # see http://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-init.html
-      AWS::CloudFormation::Init:
-        config:
-          files:
-            "/usr/bin/buildkite-cloudwatch-metrics":
-              mode: "000755"
-              owner: root
-              group: root
-              source: $(BinUrl)
-            "/etc/init/buildkite-cloudwatch-metrics.conf":
-              mode: "000644"
-              owner: root
-              group: root
-              content: |
-                start on startup
-                respawn
-                respawn limit unlimited
-                env AWS_REGION=$(AWS::Region)
-                script
-                    mkfifo /tmp/buildkite-cloudwatch-metrics-log-fifo
-                    ( logger -t buildkite-cloudwatch-metrics </tmp/buildkite-cloudwatch-metrics-log-fifo & )
-                    exec >/tmp/buildkite-cloudwatch-metrics-log-fifo
-                    exec 2>&1
-                    rm /tmp/buildkite-cloudwatch-metrics-log-fifo
-                    exec /usr/bin/buildkite-cloudwatch-metrics \
-                        -org "$(BuildkiteOrgSlug)" -token "$(BuildkiteApiAccessToken)" \
-                        -interval $(PollInterval) \
-                        -queue "$(QueueName)"
-                end script
-
-          commands:
-            01-start-buildkite-cloudwatch-metrics:
-              command: start buildkite-cloudwatch-metrics
+      FunctionName: $(BuildkiteMetricsFunction)
+      Action: "lambda:InvokeFunction"
+      Principal: "events.amazonaws.com"
+      SourceArn:
+        Fn::GetAtt:
+          - "ScheduledRule"
+          - "Arn"
