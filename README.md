@@ -1,5 +1,11 @@
 # Buildkite Cloudwatch Metrics Publisher
 
+## Deprecated
+
+> Buildkite Cloudwatch Metrics Publisher has been deprecated and no longer maintained. You can now use [buildkite-metrics’ AWS Lambda function support](https://github.com/buildkite/buildkite-metrics#aws-lambda) to send Buildkite build metrics to CloudWatch.
+
+## Description
+
 A CloudFormation stack that runs [buildkite-metrics](https://github.com/buildkite/buildkite-metrics) every 15 seconds and publishes the results to CloudWatch metrics. This stack is used as part of the [Elastic CI Stack for AWS](http://github.com/buildkite/elastic-ci-stack-for-aws/pulls).
 
 [![Launch Buildkite Cloudwatch Metrics Stack](https://cdn.rawgit.com/buildkite/cloudformation-launch-stack-button-svg/master/launch-stack.svg)](https://console.aws.amazon.com/cloudformation/home?region=us-east-1#/stacks/new?stackName=buildkite-cloudwatch-metrics-publisher&templateURL=https://s3.amazonaws.com/buildkite-cloudwatch-metrics-publisher/master/cloudwatch-metrics-publisher.json)
